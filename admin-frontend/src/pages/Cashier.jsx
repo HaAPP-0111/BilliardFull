@@ -35,6 +35,10 @@ const Cashier = () => {
   const [error, setError] = useState("");
 
   const [tableDialogOpen, setTableDialogOpen] = useState(false);
+  const [addTableOpen, setAddTableOpen] = useState(false);
+  const [tableForm, setTableForm] = useState({ name: "", capacity: "", description: "", imageUrl: "" });
+  const [tableImageFile, setTableImageFile] = useState(null);
+  
   const [addProductOpen, setAddProductOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [productQty, setProductQty] = useState(1);
@@ -129,6 +133,37 @@ const Cashier = () => {
     setSelectedProduct(product);
     setProductQty(1);
     setAddProductOpen(true);
+  };
+
+  const handleAddTable = async () => {
+    if (!tableForm.name.trim()) return alert("Vui lòng nhập tên bàn!");
+    if (!tableForm.capacity) return alert("Vui lòng nhập sức chứa!");
+    
+    try {
+      setLoading(true);
+      const formData = new FormData();
+      formData.append("name", tableForm.name);
+      formData.append("capacity", tableForm.capacity);
+      formData.append("description", tableForm.description || "");
+      
+      if (tableImageFile) {
+        formData.append("image", tableImageFile);
+      }
+      
+      const res = await api.post("/tables", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      
+      alert("✅ Thêm bàn thành công!");
+      setAddTableOpen(false);
+      setTableForm({ name: "", capacity: "", description: "", imageUrl: "" });
+      setTableImageFile(null);
+      loadTables();
+    } catch (err) {
+      alert("❌ Lỗi: " + (err.response?.data?.message || err.message));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAddToInvoice = () => {
@@ -334,18 +369,104 @@ const Cashier = () => {
         </Grid>
       </Grid>
 
-      <Dialog open={tableDialogOpen} onClose={() => setTableDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Chọn Bàn</DialogTitle>
+      <Dialog open={tableDialogOpen} onClose={() => setTableDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ fontWeight: "bold", fontSize: "1.3rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          🎱 Chọn Bàn
+        </DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
-            {tables.map((table) => (
-              <Grid item xs={6} key={table.id}>
-                <Card onClick={() => handleSelectTable(table)} sx={{ cursor: "pointer", textAlign: "center", p: 2, transition: "all 0.2s", border: selectedTable?.id === table.id ? "3px solid #0b64b3" : "1px solid #ccc", "&:hover": { boxShadow: 2 } }}>
-                  <Typography sx={{ fontWeight: "bold", mb: 0.5 }}>{table.name}</Typography>
-                  <Typography variant="caption" color="textSecondary">{table.status}</Typography>
-                </Card>
-              </Grid>
-            ))}
+            {tables.map((table) => {
+              const getStatusColor = (status) => {
+                if (!status) return "#999";
+                const s = status.toLowerCase();
+                if (s.includes("available") || s.includes("trống")) return "#4caf50";
+                if (s.includes("occupied") || s.includes("đang dùng")) return "#f44336";
+                return "#ff9800";
+              };
+              const statusColor = getStatusColor(table.status);
+              
+              return (
+                <Grid item xs={12} sm={6} md={4} key={table.id}>
+                  <Card 
+                    onClick={() => handleSelectTable(table)} 
+                    sx={{ 
+                      cursor: "pointer", 
+                      transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                      border: "2px solid #e0e0e0",
+                      borderRadius: "12px",
+                      overflow: "hidden",
+                      "&:hover": { 
+                        transform: "translateY(-8px)",
+                        boxShadow: "0 12px 24px rgba(0,0,0,0.15)",
+                        borderColor: "#0b64b3"
+                      }
+                    }}
+                  >
+                    <Box sx={{ 
+                      height: 180, 
+                      bgcolor: "#f0f0f0", 
+                      display: "flex", 
+                      alignItems: "center", 
+                      justifyContent: "center",
+                      overflow: "hidden",
+                      position: "relative"
+                    }}>
+                      {table.imageUrl ? (
+                        <img src={table.imageUrl} alt={table.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <Box sx={{ textAlign: "center" }}>
+                          <Typography sx={{ fontSize: "4rem", mb: 1 }}>🎱</Typography>
+                          <Typography sx={{ color: "#999", fontWeight: "500" }}></Typography>
+                        </Box>
+                      )}
+                    </Box>
+                    
+                    <CardContent sx={{ p: 2 }}>
+                      <Typography 
+                        sx={{ 
+                          fontWeight: "bold", 
+                          fontSize: "1.2rem",
+                          mb: 1,
+                          color: "#333"
+                        }}
+                      >
+                        {table.name}
+                      </Typography>
+                      
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}>
+                        <Box 
+                          sx={{ 
+                            width: 10, 
+                            height: 10, 
+                            borderRadius: "50%", 
+                            bgcolor: statusColor,
+                            boxShadow: `0 0 6px ${statusColor}`
+                          }} 
+                        />
+                        <Typography variant="body2" sx={{ fontWeight: "600", color: statusColor }}>
+                          {table.status || "Không xác định"}
+                        </Typography>
+                      </Box>
+                      
+                      {table.capacity && (
+                        <Typography variant="caption" sx={{ color: "#666", display: "block", mb: 0.5 }}>
+                          👥 Sức chứa: <strong>{table.capacity} chỗ</strong>
+                        </Typography>
+                      )}
+                      
+                      <Button 
+                        variant="contained" 
+                        fullWidth 
+                        onClick={() => handleSelectTable(table)}
+                        sx={{ mt: 1.5, fontWeight: "bold", textTransform: "none", fontSize: "1rem" }}
+                      >
+                        Chọn Bàn Này
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              );
+            })}
           </Grid>
         </DialogContent>
       </Dialog>

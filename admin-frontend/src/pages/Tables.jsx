@@ -9,12 +9,33 @@ import {
   TableBody,
   Button,
   Stack,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
 } from "@mui/material";
 import api from "../api/axios";
+
+const EMPTY_TABLE = {
+  id: null,
+  name: "",
+  pricePerHour: "",
+  description: "",
+  imageUrl: "",
+};
 
 export default function Tables() {
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState(false); // false = create, true = edit
+  const [form, setForm] = useState(EMPTY_TABLE);
+  const [error, setError] = useState("");
+
+  const [imageFile, setImageFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState("");
 
   const load = async () => {
     try {
@@ -95,62 +116,103 @@ export default function Tables() {
     }
   };
 
-  // Sửa nhanh: dùng window.prompt để đổi tên & giá, gọi PUT /tables/{id}
-  const handleEdit = async (table) => {
-    const name = window.prompt("Tên bàn:", table.name);
-    if (name === null) return;
-
-    const desc = window.prompt("Mô tả (tùy chọn):", table.description || "");
-    if (desc === null) return;
-
-    const priceStr = window.prompt("Giá / giờ:", table.pricePerHour);
-    if (priceStr === null) return;
-
-    const price = Number(priceStr);
-    if (Number.isNaN(price)) {
-      alert("Giá không hợp lệ");
-      return;
-    }
-
-    try {
-      await api.put(`/tables/${table.id}`, {
-        name,
-        pricePerHour: price,
-        status: table.status, // giữ nguyên status
-        description: desc,
-      });
-      await load();
-    } catch (err) {
-      console.error("Failed to update table:", err);
-    }
+  const openCreateDialog = () => {
+    setEditing(false);
+    setForm(EMPTY_TABLE);
+    setError("");
+    setImageFile(null);
+    setPreviewUrl("");
+    setDialogOpen(true);
   };
 
-  // Thêm bàn mới
-  const handleCreate = async () => {
-    const name = window.prompt("Tên bàn mới:");
-    if (!name) return;
+  const openEditDialog = (table) => {
+    setEditing(true);
+    setForm({
+      id: table.id,
+      name: table.name || "",
+      pricePerHour: table.pricePerHour ?? "",
+      description: table.description || "",
+      imageUrl: table.imageUrl || "",
+      status: table.status,
+    });
+    setError("");
+    setImageFile(null);
+    setPreviewUrl("");
+    setDialogOpen(true);
+  };
 
-    const priceStr = window.prompt("Giá / giờ:");
-    if (!priceStr) return;
+  const closeDialog = () => {
+    setDialogOpen(false);
+  };
 
-    const desc = window.prompt("Mô tả (tùy chọn):", "");
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
 
-    const price = Number(priceStr);
-    if (Number.isNaN(price)) {
-      alert("Giá không hợp lệ");
+  const handleFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) {
+      setImageFile(null);
+      setPreviewUrl("");
+      return;
+    }
+    setImageFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) {
+      setError("Tên bàn không được để trống.");
+      return;
+    }
+
+    const priceNumber = Number(form.pricePerHour);
+    if (Number.isNaN(priceNumber) || priceNumber < 0) {
+      setError("Giá không hợp lệ.");
       return;
     }
 
     try {
-      await api.post("/tables", {
-        name,
-        pricePerHour: price,
-        description: desc,
-        status: "AVAILABLE",
-      });
+      // 1. Upload ảnh trước (nếu có chọn file mới)
+      let imageUrl = form.imageUrl?.trim() || "";
+      if (imageFile) {
+        try {
+          const fd = new FormData();
+          fd.append("image", imageFile);
+
+          const uploadRes = await api.post("/upload/product", fd, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+
+          imageUrl = uploadRes.data; // server trả /uploads/xxx.png
+        } catch (uploadErr) {
+          console.error("Failed to upload image:", uploadErr);
+          setError("Upload ảnh không thành công. Hãy thử lại.");
+          return;
+        }
+      }
+
+      // 2. Gửi table lên backend
+      const payload = {
+        name: form.name.trim(),
+        pricePerHour: priceNumber,
+        description: form.description.trim(),
+        imageUrl: imageUrl,
+        status: editing ? form.status : "AVAILABLE",
+      };
+
+      if (editing) {
+        await api.put(`/tables/${form.id}`, payload);
+      } else {
+        await api.post("/tables", payload);
+      }
+
+      setDialogOpen(false);
       await load();
     } catch (err) {
-      console.error("Failed to create table:", err);
+      console.error("Failed to save table:", err);
+      setError(err.response?.data?.message || "Lưu bàn không thành công.");
     }
   };
 
@@ -162,9 +224,15 @@ export default function Tables() {
         justifyContent="space-between"
         mb={2}
       >
-        <Typography variant="h6">Quản Lý Bàn Bi-a</Typography>
-        <Button variant="contained" onClick={handleCreate}>
-          Thêm bàn
+        <div>
+          <Typography variant="h6">Quản Lý Bàn Bi-a</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Quản lý các bàn bi-a tại đây
+          </Typography>
+        </div>
+
+        <Button variant="contained" onClick={openCreateDialog}>
+          THÊM BÀN
         </Button>
       </Stack>
 
@@ -255,7 +323,7 @@ export default function Tables() {
                     <Button
                       size="small"
                       variant="outlined"
-                      onClick={() => handleEdit(t)}
+                      onClick={() => openEditDialog(t)}
                     >
                       Sửa
                     </Button>
@@ -266,6 +334,55 @@ export default function Tables() {
           </TableBody>
         </Table>
       )}
+
+      {/* Dialog thêm / sửa bàn */}
+      <Dialog open={dialogOpen} onClose={closeDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {editing ? "Cập nhật bàn" : "Thêm bàn mới"}
+        </DialogTitle>
+        <DialogContent dividers>
+          {error && (
+            <Typography color="error" variant="body2" sx={{ mb: 1 }}>
+              {error}
+            </Typography>
+          )}
+          <Stack spacing={2} mt={1}>
+            <TextField
+              label="Tên bàn"
+              name="name"
+              value={form.name}
+              onChange={handleChange}
+              fullWidth
+              required
+            />
+            <TextField
+              label="Giá / giờ"
+              name="pricePerHour"
+              type="number"
+              value={form.pricePerHour}
+              onChange={handleChange}
+              fullWidth
+              required
+            />
+            <TextField
+              label="Mô tả"
+              name="description"
+              value={form.description}
+              onChange={handleChange}
+              fullWidth
+              multiline
+              minRows={2}
+            />
+
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDialog}>Hủy</Button>
+          <Button onClick={handleSave} variant="contained">
+            {editing ? "Lưu" : "Thêm"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Paper>
   );
 }

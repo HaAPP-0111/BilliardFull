@@ -95,8 +95,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/tables/**").permitAll()
 
-                        // Cho phép invoice endpoints (thanh toán, xuất PDF) không cần token
+                        // Cho phép ALL HTTP methods trên invoice endpoints (POST, GET, DELETE, etc) không cần token
                         .requestMatchers("/api/invoices/**").permitAll()
+
+                        // Cho phép upload ảnh không cần token
+                        .requestMatchers(HttpMethod.POST, "/api/upload/**").permitAll()
 
                         // Cho phép login + swagger + đặt bàn (reservation) không cần token
                         .requestMatchers(
