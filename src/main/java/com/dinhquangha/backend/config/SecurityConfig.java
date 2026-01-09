@@ -88,15 +88,18 @@ public class SecurityConfig {
 
                 // Phân quyền
                 .authorizeHttpRequests(auth -> auth
-                        // Cho phép truy cập ảnh tĩnh
-                        .requestMatchers("/uploads/**").permitAll()
+                    // Cho phép truy cập ảnh tĩnh
+                    .requestMatchers("/uploads/**").permitAll()
+
+                    // OPTIONS (CORS preflight) luôn được phép
+                    .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                         // Cho phép lấy danh sách sản phẩm và bàn không cần token (phục vụ Cashier chọn bàn)
                         .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/tables/**").permitAll()
 
                         // Cho phép ALL HTTP methods trên invoice endpoints (POST, GET, DELETE, etc) không cần token
-                        .requestMatchers("/api/invoices/**").permitAll()
+                        .requestMatchers("/api/invoices", "/api/invoices/**").permitAll()
 
                         // Cho phép upload ảnh không cần token
                         .requestMatchers(HttpMethod.POST, "/api/upload/**").permitAll()
