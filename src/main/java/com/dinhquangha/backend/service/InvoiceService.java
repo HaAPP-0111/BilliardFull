@@ -116,6 +116,7 @@ public class InvoiceService {
 
         InvoiceItem item = new InvoiceItem();
         item.setProduct(product);
+        item.setCustomName(product.getName());
         item.setQuantity(quantity);
         item.setUnitPrice(product.getPrice());
 
@@ -249,6 +250,7 @@ public class InvoiceService {
 
                 InvoiceItem item = new InvoiceItem();
                 item.setProduct(product);
+                item.setCustomName(product.getName());
                 item.setQuantity(quantity);
                 item.setUnitPrice(product.getPrice());
 
@@ -275,57 +277,119 @@ public class InvoiceService {
                 invoiceRepository.deleteById(invoiceId);
         }
 
-        public Invoice createInvoiceWithItemsAndDiscount(Long tableId, String customerName, 
-                                                         java.util.List<?> itemsList, 
-                                                         BigDecimal discountPercent, 
+        public Invoice createInvoiceWithItemsAndDiscount(Long tableId,
+                                                         String customerName,
+                                                         java.util.List<?> itemsList,
+                                                         BigDecimal discountPercent,
                                                          BigDecimal taxPercent) {
                 Objects.requireNonNull(tableId, "tableId must not be null");
                 Objects.requireNonNull(itemsList, "itemsList must not be null");
-                
+
+                Invoice invoice = new Invoice();
                 BilliardTable table = tableRepository.findById(tableId)
                         .orElseThrow(() -> new IllegalArgumentException("Table not found"));
-                
-                // Create new invoice (no session link for now, user can link later)
-                Invoice invoice = new Invoice();
+
+                TableSession activeSession = sessionRepository.findByTableIdAndEndTimeIsNull(tableId).orElse(null);
+                if (activeSession != null) {
+                        invoice.setSession(activeSession);
+                }
+
                 invoice.setCustomerName(customerName);
                 invoice.setCreatedAt(LocalDateTime.now());
-                
-                // Add items
+
                 BigDecimal subtotal = BigDecimal.ZERO;
+
                 for (Object itemObj : itemsList) {
-                        if (itemObj instanceof java.util.Map) {
-                                java.util.Map<?, ?> itemMap = (java.util.Map<?, ?>) itemObj;
-                                Long productId = Long.valueOf(itemMap.get("productId").toString());
-                                int quantity = Integer.parseInt(itemMap.get("quantity").toString());
-                                BigDecimal price = new BigDecimal(itemMap.get("price").toString());
-                                
-                                Product product = productRepository.findById(productId)
-                                        .orElseThrow(() -> new IllegalArgumentException("Product " + productId + " not found"));
-                                
-                                InvoiceItem item = new InvoiceItem();
-                                item.setProduct(product);
-                                item.setQuantity(quantity);
-                                item.setUnitPrice(price);
-                                item.setLineTotal(price.multiply(BigDecimal.valueOf(quantity)));
-                                
-                                invoice.getItems().add(item);
-                                subtotal = subtotal.add(item.getLineTotal());
+                        if (!(itemObj instanceof java.util.Map<?, ?> itemMap)) {
+                                continue;
                         }
+
+                        Long productId = itemMap.get("productId") != null
+                                ? Long.valueOf(itemMap.get("productId").toString())
+                                : null;
+                        int quantity = itemMap.get("quantity") != null
+                                ? Integer.parseInt(itemMap.get("quantity").toString())
+                                : 1;
+                        String providedName = itemMap.get("productName") != null
+                                ? itemMap.get("productName").toString()
+                                : null;
+
+                        Product product = null;
+                        if (productId != null) {
+                                product = productRepository.findById(productId)
+                                        .orElseThrow(() -> new IllegalArgumentException("Product " + productId + " not found"));
+                        }
+
+                        BigDecimal providedPrice = itemMap.get("price") != null
+                                ? new BigDecimal(itemMap.get("price").toString())
+                                : null;
+
+                        BigDecimal unitPrice;
+                        if (providedPrice != null) {
+                                unitPrice = providedPrice;
+                        } else if (product != null && product.getPrice() != null) {
+                                unitPrice = product.getPrice();
+                        } else {
+                                unitPrice = BigDecimal.ZERO;
+                        }
+
+                        InvoiceItem item = new InvoiceItem();
+                        item.setProduct(product);
+                        if (product == null) {
+                                String fallbackName = (providedName != null && !providedName.isBlank())
+                                        ? providedName
+                                        : "Mục tuỳ chỉnh";
+                                item.setCustomName(fallbackName);
+                        } else {
+                                item.setCustomName(product.getName());
+                        }
+                        item.setQuantity(quantity);
+                        item.setUnitPrice(unitPrice);
+                        item.setLineTotal(unitPrice.multiply(BigDecimal.valueOf(quantity)));
+
+                        invoice.getItems().add(item);
+                        subtotal = subtotal.add(item.getLineTotal());
                 }
-                
+
                 invoice.setSubtotal(subtotal);
-                invoice.setDiscountPercent(discountPercent);
-                BigDecimal discountAmount = subtotal.multiply(discountPercent).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+
+                BigDecimal safeDiscountPercent = discountPercent == null ? BigDecimal.ZERO : discountPercent;
+                invoice.setDiscountPercent(safeDiscountPercent);
+                BigDecimal discountAmount = subtotal.multiply(safeDiscountPercent)
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
                 invoice.setDiscountAmount(discountAmount);
-                
+
                 BigDecimal afterDiscount = subtotal.subtract(discountAmount);
-                invoice.setTaxPercent(taxPercent);
-                BigDecimal taxAmount = afterDiscount.multiply(taxPercent).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+
+                BigDecimal safeTaxPercent = taxPercent == null ? BigDecimal.ZERO : taxPercent;
+                invoice.setTaxPercent(safeTaxPercent);
+                BigDecimal taxAmount = afterDiscount.multiply(safeTaxPercent)
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
                 invoice.setTaxAmount(taxAmount);
-                
+
                 BigDecimal total = afterDiscount.add(taxAmount);
                 invoice.setTotal(total);
-                
+
+                // Nếu hoá đơn gắn với phiên bàn, đánh dấu bàn đã trống trở lại sau khi thanh toán
+                BilliardTable targetTable = table;
+                if (activeSession != null) {
+                        if (activeSession.getEndTime() == null) {
+                                activeSession.setEndTime(LocalDateTime.now());
+                        }
+                        if (activeSession.getTotal() == null) {
+                                activeSession.setTotal(subtotal);
+                        }
+                        sessionRepository.save(activeSession);
+                        if (activeSession.getTable() != null) {
+                                targetTable = activeSession.getTable();
+                        }
+                }
+
+                if (targetTable != null) {
+                        targetTable.setStatus(BilliardTable.TableStatus.AVAILABLE);
+                        tableRepository.save(targetTable);
+                }
+
                 return invoiceRepository.save(invoice);
         }
 }

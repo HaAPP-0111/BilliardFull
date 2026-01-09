@@ -15,6 +15,9 @@ public class InvoiceItem {
     @JoinColumn(name = "product_id")
     private Product product;
 
+    @Column(name = "custom_name", length = 255)
+    private String customName;
+
     @Column(nullable = false)
     private int quantity = 1;
 
@@ -23,6 +26,7 @@ public class InvoiceItem {
 
     @Column(nullable = false)
     private BigDecimal lineTotal = BigDecimal.ZERO;
+    
 
     public Long getId() {
         return id;
@@ -38,6 +42,14 @@ public class InvoiceItem {
 
     public void setProduct(Product product) {
         this.product = product;
+    }
+
+    public String getCustomName() {
+        return customName;
+    }
+
+    public void setCustomName(String customName) {
+        this.customName = customName;
     }
 
     public int getQuantity() {

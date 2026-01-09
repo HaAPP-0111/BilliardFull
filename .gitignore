@@ -31,3 +31,9 @@ build/
 
 ### VS Code ###
 .vscode/
+# Runtime uploads (không push lên git)
+uploads/
+uploads/**
+
+# Logs
+*.log
