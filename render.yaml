@@ -1,10 +1,9 @@
 services:
   - type: web
     name: billiard-backend
-    env: java
+    env: docker
     plan: starter
-    buildCommand: ./mvnw clean package -DskipTests
-    startCommand: java -jar target/backend-0.0.1-SNAPSHOT.jar
+    dockerfilePath: Dockerfile
     autoDeploy: true
     envVars:
       - key: SPRING_PROFILES_ACTIVE
@@ -20,8 +19,8 @@ services:
       - key: JWT_VALIDITY_MS
         value: "3600000"
       - key: UPLOAD_DIR
-        value: /opt/render/project/src/uploads
-    disks:
-      - name: uploads
-        mountPath: /opt/render/project/src/uploads
-        sizeGB: 1
+        value: /app/uploads
+    disk:
+      name: uploads
+      mountPath: /app/uploads
+      sizeGB: 1

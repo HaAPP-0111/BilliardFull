@@ -1,0 +1,12 @@
+.git
+.gitignore
+Dockerfile
+render.yaml
+node_modules
+uploads
+backend.log
+target
+.vscode
+.idea
+*.iml
+*.log
