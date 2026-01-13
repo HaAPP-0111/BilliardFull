@@ -21,7 +21,6 @@ COPY --from=build /workspace/target/backend-0.0.1-SNAPSHOT.jar app.jar
 RUN addgroup --system spring && adduser --system --ingroup spring spring \
     && mkdir -p /app/uploads \
     && chown -R spring:spring /app/uploads
-VOLUME ["/app/uploads"]
 USER spring
 EXPOSE 8080
 ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar app.jar"]
