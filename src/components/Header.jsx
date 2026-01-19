@@ -13,7 +13,7 @@ export default function Header() {
     { label: "Tổng quan", path: "/dashboard" },
     { label: "Hàng hóa", path: "/products" },
     { label: "Phòng/Bàn", path: "/tables" },
-    { label: "Giao dịch", path: "/bills" },
+    { label: "Hóa đơn", path: "/bills" },
     // { label: "Đối tác", path: "#" },
     { label: "Nhân viên", path: "/employees" },
     // { label: "Sổ quỹ", path: "#" },

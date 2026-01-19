@@ -243,7 +243,6 @@ export default function Tables() {
           <TableHead>
             <TableRow>
               <TableCell>Mã</TableCell>
-              <TableCell>Ảnh</TableCell>
               <TableCell>Mô tả</TableCell>
               <TableCell>Giờ đặt</TableCell>
               <TableCell>Tên bàn</TableCell>
@@ -260,24 +259,6 @@ export default function Tables() {
             {tables.map((t) => (
               <TableRow key={t.id}>
                 <TableCell>{t.id}</TableCell>
-                <TableCell>
-                  {t.imageUrl ? (
-                    <img
-                      src={t.imageUrl}
-                      alt={t.name}
-                      style={{
-                        width: 48,
-                        height: 48,
-                        objectFit: "cover",
-                        borderRadius: 8,
-                      }}
-                    />
-                  ) : (
-                    <span style={{ color: "#9ca3af", fontSize: 12 }}>
-                      (No image)
-                    </span>
-                  )}
-                </TableCell>
                 <TableCell>{t.description || '-'}</TableCell>
                 <TableCell>{t.reservationTime ? new Date(t.reservationTime).toLocaleString() : '-'}</TableCell>
                 <TableCell>{t.name}</TableCell>

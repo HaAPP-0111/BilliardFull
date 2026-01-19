@@ -47,6 +47,7 @@ export default function Dashboard() {
 
   return (
     <div style={{ padding: 24 }}>
+      <Banner />
       <div style={{ marginBottom: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
@@ -142,6 +143,36 @@ function StatCard({ title, value, accentColor }) {
         }}
       >
         {value}
+      </div>
+    </div>
+  );
+}
+
+function Banner() {
+  return (
+    <div
+      style={{
+        width: "100%",
+        borderRadius: 12,
+        padding: 20,
+        marginBottom: 18,
+        background: "linear-gradient(90deg,#0ea5e9 0%,#6366f1 100%)",
+        color: "white",
+        boxShadow: "0 6px 18px rgba(99,102,241,0.12)",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+      }}
+    >
+      <div>
+        <div style={{ fontSize: 20, fontWeight: 700 }}>Xin chào, quản trị viên!</div>
+        <div style={{ fontSize: 13, opacity: 0.95, marginTop: 6 }}>
+          Tổng quan hệ thống và số liệu nhanh về hoạt động hôm nay.
+        </div>
+      </div>
+      <div style={{ textAlign: "right" }}>
+        <div style={{ fontSize: 14, opacity: 0.95 }}>Phiên bản hệ thống</div>
+        <div style={{ fontSize: 18, fontWeight: 600, marginTop: 4 }}>v1.0</div>
       </div>
     </div>
   );

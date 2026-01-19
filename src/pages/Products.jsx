@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Typography,
   Paper,
@@ -30,9 +30,10 @@ const EMPTY_PRODUCT = {
 export default function Products() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1); // 1-based for MUI Pagination
+  const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
-  const [totalPages, setTotalPages] = useState(0);
+  const [categories, setCategories] = useState(["all"]);
+  const [selectedCategory, setSelectedCategory] = useState("all");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(false); // false = create, true = edit
@@ -42,15 +43,41 @@ export default function Products() {
   const [imageFile, setImageFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
 
-  const load = async (pageNumber = 1) => {
+  const loadProducts = async () => {
     try {
       setLoading(true);
-      const res = await api.get(`/products?page=${pageNumber - 1}&size=${pageSize}`);
-      // Spring Page<Product> structure: content, totalPages, totalElements, number, size
-      const data = res.data || {};
-      setProducts(data.content || []);
-      setTotalPages(data.totalPages || 0);
-      setPage((data.number || 0) + 1);
+      const size = 100;
+      let currentPage = 0;
+      let fetched = [];
+      let hasNext = true;
+
+      while (hasNext) {
+        const res = await api.get("/products", { params: { page: currentPage, size, sort: "name,asc" } });
+        const isArrayResponse = Array.isArray(res.data);
+        const pageContent = isArrayResponse ? res.data : res.data?.content || [];
+        fetched = [...fetched, ...pageContent];
+
+        if (isArrayResponse || !res.data) {
+          hasNext = false;
+        } else {
+          const isLastPage = res.data.last ?? pageContent.length < size;
+          hasNext = !isLastPage;
+          currentPage += 1;
+        }
+      }
+
+      setProducts(fetched);
+      const cats = ["all"];
+      fetched.forEach((product) => {
+        if (product.category) {
+          const normalized = product.category.trim();
+          if (normalized && !cats.includes(normalized)) {
+            cats.push(normalized);
+          }
+        }
+      });
+      setCategories(cats);
+      setPage(1);
     } catch (err) {
       console.error("Failed to load products:", err);
       setError("Không tải được danh sách sản phẩm.");
@@ -60,8 +87,28 @@ export default function Products() {
   };
 
   useEffect(() => {
-    load(page);
+    loadProducts();
   }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedCategory]);
+
+  const filteredProducts = useMemo(() => {
+    if (selectedCategory === "all") return products;
+    return products.filter((product) => product.category === selectedCategory);
+  }, [products, selectedCategory]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
+  const paginatedProducts = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, page, pageSize]);
 
   const openCreateDialog = () => {
     setEditing(false);
@@ -150,7 +197,7 @@ export default function Products() {
       }
 
       setDialogOpen(false);
-      await load(page);
+      await loadProducts();
     } catch (err) {
       console.error("Failed to save product:", err);
       setError("Lưu sản phẩm không thành công.");
@@ -162,7 +209,7 @@ export default function Products() {
     try {
       await api.delete(`/products/${id}`);
       // reload same page after delete
-      await load(page);
+      await loadProducts();
     } catch (err) {
       console.error("Failed to delete product:", err);
       alert("Xóa sản phẩm không thành công.");
@@ -170,9 +217,7 @@ export default function Products() {
   };
 
   const handlePageChange = (event, value) => {
-    // value is 1-based page
     setPage(value);
-    load(value);
   };
 
   return (
@@ -201,6 +246,23 @@ export default function Products() {
         <Typography>Chưa có sản phẩm nào.</Typography>
       ) : (
         <>
+        <Stack direction="row" spacing={1} flexWrap="wrap" mb={2}>
+          {categories.map((cat) => (
+            <Button
+              key={cat}
+              size="small"
+              variant={selectedCategory === cat ? "contained" : "outlined"}
+              onClick={() => setSelectedCategory(cat)}
+            >
+              {cat === "all" ? "Tất cả" : cat}
+            </Button>
+          ))}
+        </Stack>
+
+        {filteredProducts.length === 0 ? (
+          <Typography>Không có sản phẩm phù hợp với bộ lọc.</Typography>
+        ) : (
+          <>
         <Table>
           <TableHead>
             <TableRow>
@@ -214,7 +276,7 @@ export default function Products() {
           </TableHead>
 
           <TableBody>
-            {products.map((p) => (
+            {paginatedProducts.map((p) => (
               <TableRow key={p.id}>
                 <TableCell>{p.id}</TableCell>
                 <TableCell>
@@ -266,7 +328,7 @@ export default function Products() {
             ))}
           </TableBody>
         </Table>
-        {/* Pagination control */}
+        {totalPages > 1 && (
         <Stack alignItems="center" mt={2}>
           <Pagination
             count={totalPages}
@@ -275,6 +337,9 @@ export default function Products() {
             color="primary"
           />
         </Stack>
+        )}
+        </>
+        )}
         </>
       )}
 

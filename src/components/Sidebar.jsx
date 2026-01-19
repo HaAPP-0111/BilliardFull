@@ -58,7 +58,7 @@ style={{
     🍽 Phòng / Bàn
   </NavLink>
   <NavLink to="/bills" style={linkStyle}>
-    🧾 Giao dịch
+    🧾 Hóa đơn
   </NavLink>
   <NavLink to="/employees" style={linkStyle}>
     👨‍💼 Nhân viên

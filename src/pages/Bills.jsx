@@ -1,6 +1,7 @@
 // src/pages/Bills.jsx
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Paper,
   Typography,
@@ -31,6 +32,10 @@ export default function Bills() {
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [invoiceDetail, setInvoiceDetail] = useState(null);
+  const [highlightInvoiceId, setHighlightInvoiceId] = useState(null);
+
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const load = async (pageNumber = 1) => {
     try {
@@ -47,11 +52,7 @@ export default function Bills() {
     }
   };
 
-  useEffect(() => {
-    load(page);
-  }, []);
-
-  const openDetail = async (invoiceId) => {
+  const openDetail = useCallback(async (invoiceId) => {
     try {
       const res = await api.get(`/invoices/${invoiceId}`);
       setInvoiceDetail(res.data);
@@ -59,7 +60,26 @@ export default function Bills() {
     } catch (err) {
       console.error("Failed to load invoice detail", err);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    load(page);
+  }, []);
+
+  useEffect(() => {
+    if (location.state?.highlightInvoiceId) {
+      setHighlightInvoiceId(location.state.highlightInvoiceId);
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location, navigate]);
+
+  useEffect(() => {
+    if (!highlightInvoiceId || invoices.length === 0) return;
+    const matched = invoices.some((inv) => inv.id === highlightInvoiceId);
+    if (!matched) return;
+    openDetail(highlightInvoiceId);
+    setHighlightInvoiceId(null);
+  }, [highlightInvoiceId, invoices, openDetail]);
 
   const closeDetail = () => {
     setDetailOpen(false);
@@ -104,11 +124,11 @@ export default function Bills() {
                   <TableCell>ID</TableCell>
                   <TableCell>Khách hàng</TableCell>
                   <TableCell>Thời gian</TableCell>
-                  <TableCell>Subtotal</TableCell>
-                  <TableCell>Discount</TableCell>
-                  <TableCell>Tax</TableCell>
-                  <TableCell>Total</TableCell>
-                  <TableCell>Actions</TableCell>
+                  <TableCell>Tạm tính</TableCell>
+                  <TableCell>Giảm giá</TableCell>
+                  <TableCell>Thuế</TableCell>
+                  <TableCell>Tổng cộng</TableCell>
+                  <TableCell>Thao tác</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>

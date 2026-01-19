@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Box,
   Paper,
@@ -20,12 +21,69 @@ import {
   TableRow,
   IconButton,
   Alert,
+  Pagination,
 } from "@mui/material";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import DeleteIcon from "@mui/icons-material/Delete";
 import api from "../api/axios";
 
+const PRODUCTS_PER_PAGE = 9;
+const INVOICE_STORAGE_KEY = "cashier_invoice_state";
+
+const createEmptyInvoice = () => ({
+  items: [],
+  subtotal: 0,
+  discountPercent: 0,
+  discountAmount: 0,
+  taxPercent: 0,
+  taxAmount: 0,
+  total: 0,
+});
+
+const readInvoiceStorage = () => {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(INVOICE_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (err) {
+    console.warn("Không thể đọc dữ liệu hoá đơn đã lưu:", err);
+    return {};
+  }
+};
+
+const writeInvoiceStorage = (data) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(INVOICE_STORAGE_KEY, JSON.stringify(data));
+  } catch (err) {
+    console.warn("Không thể ghi dữ liệu hoá đơn đã lưu:", err);
+  }
+};
+
+const getStoredInvoiceForTable = (tableId) => {
+  if (!tableId) return null;
+  const allInvoices = readInvoiceStorage();
+  return allInvoices?.[tableId] || null;
+};
+
+const persistInvoiceForTable = (tableId, payload) => {
+  if (!tableId) return;
+  const allInvoices = readInvoiceStorage();
+  allInvoices[tableId] = payload;
+  writeInvoiceStorage(allInvoices);
+};
+
+const clearInvoiceForTable = (tableId) => {
+  if (!tableId) return;
+  const allInvoices = readInvoiceStorage();
+  if (allInvoices[tableId]) {
+    delete allInvoices[tableId];
+    writeInvoiceStorage(allInvoices);
+  }
+};
+
 const Cashier = () => {
+  const navigate = useNavigate();
   const [tables, setTables] = useState([]);
   const [selectedTable, setSelectedTable] = useState(null);
   const [products, setProducts] = useState([]);
@@ -43,22 +101,57 @@ const Cashier = () => {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [productQty, setProductQty] = useState(1);
 
-  const [invoice, setInvoice] = useState({
-    items: [],
-    subtotal: 0,
-    discountPercent: 0,
-    discountAmount: 0,
-    taxPercent: 0,
-    taxAmount: 0,
-    total: 0,
-  });
+  const [invoice, setInvoice] = useState(createEmptyInvoice);
 
   const [customerName, setCustomerName] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const persistInvoiceState = (nextInvoice, nextCustomerName = customerName, tableIdOverride) => {
+    const tableId = tableIdOverride ?? selectedTable?.id;
+    if (!tableId) return;
+    const invoiceToPersist = { ...nextInvoice };
+    delete invoiceToPersist.id;
+    const nameToPersist = nextCustomerName || "";
+    const hasMeaningfulData =
+      invoiceToPersist.items.length > 0 ||
+      Boolean(nameToPersist) ||
+      Number(invoiceToPersist.discountPercent) > 0 ||
+      Number(invoiceToPersist.taxPercent) > 0;
+
+    if (!hasMeaningfulData) {
+      clearInvoiceForTable(tableId);
+      return;
+    }
+
+    persistInvoiceForTable(tableId, {
+      invoice: invoiceToPersist,
+      customerName: nameToPersist,
+    });
+  };
+
+  const handleCustomerNameChange = (value) => {
+    setCustomerName(value);
+    persistInvoiceState(invoice, value);
+  };
+
+  const filteredProducts = useMemo(
+    () => products.filter((p) => selectedCategory === "all" || p.category === selectedCategory),
+    [products, selectedCategory]
+  );
 
   useEffect(() => {
     loadTables();
     loadProducts();
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE));
+    setCurrentPage((prev) => Math.min(prev, maxPage));
+  }, [filteredProducts.length]);
 
   const loadTables = async () => {
     try {
@@ -75,11 +168,29 @@ const Cashier = () => {
 
   const loadProducts = async () => {
     try {
-      const res = await api.get("/products");
-      const productList = Array.isArray(res.data) ? res.data : res.data?.content || [];
-      setProducts(productList);
+      const size = 50; // tải nhiều sản phẩm mỗi lần gọi để lấp đầy phân trang
+      let page = 0;
+      let allProducts = [];
+      let hasNext = true;
+
+      while (hasNext) {
+        const res = await api.get("/products", { params: { page, size, sort: "name,asc" } });
+        const isArrayResponse = Array.isArray(res.data);
+        const pageContent = isArrayResponse ? res.data : res.data?.content || [];
+        allProducts = [...allProducts, ...pageContent];
+
+        if (isArrayResponse || !res.data) {
+          hasNext = false;
+        } else {
+          const isLastPage = res.data.last ?? pageContent.length < size;
+          hasNext = !isLastPage;
+          page += 1;
+        }
+      }
+
+      setProducts(allProducts);
       const cats = ["all"];
-      productList.forEach((p) => {
+      allProducts.forEach((p) => {
         if (p.category && !cats.includes(p.category)) cats.push(p.category);
       });
       setCategories(cats);
@@ -96,6 +207,15 @@ const Cashier = () => {
     try {
       const res = await api.get(`/tables/${table.id}`);
       const tableData = res.data;
+
+      const storedState = getStoredInvoiceForTable(table.id);
+      if (storedState) {
+        const storedCustomer = storedState.customerName || "";
+        setCustomerName(storedCustomer);
+        const restoredInvoice = { ...createEmptyInvoice(), ...storedState.invoice };
+        recalcInvoice(restoredInvoice, { tableId: table.id, customerNameOverride: storedCustomer });
+        return;
+      }
       
       // Nếu bàn có session đã kết thúc (có endTime và total), tự động thêm vào hoá đơn
       const items = [];
@@ -116,17 +236,17 @@ const Cashier = () => {
           lineTotal: Number(tableData.currentSession.total),
         });
       }
-      
-      setInvoice({ items, subtotal: 0, discountPercent: 0, discountAmount: 0, taxPercent: 0, taxAmount: 0, total: 0 });
-      if (items.length > 0) {
-        recalcInvoice({ items, discountPercent: 0, taxPercent: 0 });
-      }
+
+      const initialInvoice = { ...createEmptyInvoice(), items };
+      setCustomerName("");
+      recalcInvoice(initialInvoice, { tableId: table.id, customerNameOverride: "" });
     } catch (err) {
       setError("Lỗi tải session bàn: " + (err.response?.data?.message || err.message));
-      setInvoice({ items: [], subtotal: 0, discountPercent: 0, discountAmount: 0, taxPercent: 0, taxAmount: 0, total: 0 });
+      const emptyInvoice = createEmptyInvoice();
+      setInvoice(emptyInvoice);
+      persistInvoiceState(emptyInvoice, "", table.id);
+      setCustomerName("");
     }
-    
-    setCustomerName("");
   };
 
   const handleAddProductClick = (product) => {
@@ -187,13 +307,16 @@ const Cashier = () => {
     recalcInvoice({ ...invoice, items: newItems });
   };
 
-  const recalcInvoice = (inv) => {
+  const recalcInvoice = (inv, options = {}) => {
+    const { tableId, customerNameOverride } = options;
     const subtotal = inv.items.reduce((sum, item) => sum + item.lineTotal, 0);
     const discountAmount = subtotal * (inv.discountPercent / 100);
     const afterDiscount = subtotal - discountAmount;
     const taxAmount = afterDiscount * (inv.taxPercent / 100);
     const total = afterDiscount + taxAmount;
-    setInvoice({ ...inv, subtotal, discountAmount, taxAmount, total });
+    const nextInvoice = { ...inv, subtotal, discountAmount, taxAmount, total };
+    setInvoice(nextInvoice);
+    persistInvoiceState(nextInvoice, customerNameOverride, tableId);
   };
 
   const handleCheckout = async () => {
@@ -204,7 +327,12 @@ const Cashier = () => {
       const payload = {
         tableId: selectedTable.id,
         customerName: customerName || null,
-        items: invoice.items.map((i) => ({ productId: i.productId, quantity: i.quantity, price: i.price })),
+        items: invoice.items.map((i) => ({
+          productId: i.productId ?? null,
+          productName: i.productName,
+          quantity: i.quantity,
+          price: i.price,
+        })),
         discountPercent: invoice.discountPercent,
         taxPercent: invoice.taxPercent,
       };
@@ -213,11 +341,16 @@ const Cashier = () => {
       console.log("Thanh toán response:", res.data);
       const invoiceId = res.data?.id ?? "";
       alert("✅ Tạo hoá đơn thành công: " + invoiceId);
-      // Update invoice state with ID for PDF export button
-      setInvoice({ ...invoice, id: invoiceId });
+      if (selectedTable) {
+        clearInvoiceForTable(selectedTable.id);
+      }
+      // Reset invoice data and store ID for optional PDF export
+      const resetInvoice = { ...createEmptyInvoice(), id: invoiceId };
+      setInvoice(resetInvoice);
       setSelectedTable(null);
       setCustomerName("");
       loadTables();
+      navigate("/bills", { state: { highlightInvoiceId: invoiceId } });
     } catch (err) {
       console.error("Thanh toán error:", err);
       alert("❌ Lỗi: " + (err.response?.data?.message || err.message));
@@ -247,7 +380,12 @@ const Cashier = () => {
     }
   };
 
-  const filteredProducts = products.filter((p) => selectedCategory === "all" || p.category === selectedCategory);
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE));
+  const currentPageSafe = Math.min(currentPage, totalPages);
+  const paginatedProducts = filteredProducts.slice(
+    (currentPageSafe - 1) * PRODUCTS_PER_PAGE,
+    currentPageSafe * PRODUCTS_PER_PAGE
+  );
 
   return (
     <Box sx={{ p: 3, minHeight: "100vh", bgcolor: "#f5f5f5" }}>
@@ -278,9 +416,16 @@ const Cashier = () => {
                   </Box>
                 )}
                 <Grid container spacing={2}>
-                  {filteredProducts.map((p) => (
-                    <Grid item xs={6} sm={4} key={p.id}>
-                      <Card onClick={() => handleAddProductClick(p)} sx={{ cursor: "pointer", transition: "transform 0.2s, boxShadow 0.2s", "&:hover": { transform: "translateY(-5px)", boxShadow: 3 } }}>
+                  {paginatedProducts.length === 0 ? (
+                    <Grid item xs={12}>
+                      <Typography align="center" color="text.secondary" sx={{ py: 4 }}>
+                        Không có sản phẩm phù hợp
+                      </Typography>
+                    </Grid>
+                  ) : (
+                    paginatedProducts.map((p) => (
+                      <Grid item xs={6} sm={4} key={p.id}>
+                        <Card onClick={() => handleAddProductClick(p)} sx={{ cursor: "pointer", transition: "transform 0.2s, boxShadow 0.2s", "&:hover": { transform: "translateY(-5px)", boxShadow: 3 } }}>
                         <Box sx={{ height: 120, bgcolor: "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
                           {p.imageUrl ? (
                             <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -292,10 +437,25 @@ const Cashier = () => {
                           <Typography variant="body2" sx={{ fontWeight: "bold", mb: 0.5 }}>{p.name}</Typography>
                           <Typography variant="body2" sx={{ color: "red", fontWeight: "bold" }}>{Number(p.price).toLocaleString("vi-VN")}đ</Typography>
                         </CardContent>
-                      </Card>
-                    </Grid>
-                  ))}
+                        </Card>
+                      </Grid>
+                    ))
+                  )}
                 </Grid>
+                {filteredProducts.length > PRODUCTS_PER_PAGE && (
+                  <Box sx={{ display: "flex", justifyContent: "center", mt: 3 }}>
+                    <Pagination
+                      count={totalPages}
+                      page={currentPageSafe}
+                      onChange={(event, value) => setCurrentPage(value)}
+                      color="primary"
+                      showFirstButton
+                      showLastButton
+                      siblingCount={0}
+                      size="small"
+                    />
+                  </Box>
+                )}
               </>
             )}
           </Paper>
@@ -308,7 +468,7 @@ const Cashier = () => {
             ) : (
               <>
                 <Typography variant="h6" sx={{ mb: 2, fontWeight: "bold" }}>📋 Hoá Đơn</Typography>
-                <TextField label="Tên khách hàng (tuỳ chọn)" size="small" fullWidth value={customerName} onChange={(e) => setCustomerName(e.target.value)} sx={{ mb: 2 }} />
+                <TextField label="Tên khách hàng (tuỳ chọn)" size="small" fullWidth value={customerName} onChange={(e) => handleCustomerNameChange(e.target.value)} sx={{ mb: 2 }} />
                 <TableContainer sx={{ mb: 2, flex: 1, overflow: "auto" }}>
                   <Table size="small" stickyHeader>
                     <TableHead>
