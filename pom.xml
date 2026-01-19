@@ -50,7 +50,6 @@
     <dependency>
       <groupId>com.mysql</groupId>
       <artifactId>mysql-connector-j</artifactId>
-      <scope>runtime</scope>
     </dependency>
 
     <!-- PostgreSQL driver (runtime) -->
@@ -58,6 +57,14 @@
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
       <scope>runtime</scope>
+    </dependency>
+
+    <!-- Servlet API (compile-time, provided by container at runtime) -->
+    <dependency>
+      <groupId>jakarta.servlet</groupId>
+      <artifactId>jakarta.servlet-api</artifactId>
+      <version>6.0.0</version>
+      <scope>provided</scope>
     </dependency>
 
     <!-- JWT -->
