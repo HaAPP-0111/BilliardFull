@@ -1,7 +1,10 @@
 import axios from "axios";
 
+const rawBase = import.meta.env.VITE_API_URL || "http://localhost:8080";
+const baseURL = rawBase.replace(/\/+$/, ""); // bỏ / cuối nếu có
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
+  baseURL,
   headers: { "Content-Type": "application/json" },
 });
 
