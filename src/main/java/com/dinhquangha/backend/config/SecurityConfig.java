@@ -4,12 +4,12 @@ import com.dinhquangha.backend.security.JwtAuthenticationFilter;
 import com.dinhquangha.backend.security.UserDetailsServiceImpl;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -20,6 +20,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
 
 @Configuration
 @EnableMethodSecurity
@@ -34,13 +36,13 @@ public class SecurityConfig {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
     }
 
-    // Mã hóa mật khẩu
+    // ====== 1) Password Encoder ======
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    // DaoAuthenticationProvider dùng UserDetailsService + PasswordEncoder
+    // ====== 2) Auth Provider ======
     @Bean
     public DaoAuthenticationProvider daoAuthenticationProvider() {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
@@ -49,36 +51,60 @@ public class SecurityConfig {
         return provider;
     }
 
-    // AuthenticationManager để dùng trong AuthController (authenticate username/password)
+    // ====== 3) AuthenticationManager (dùng trong AuthController) ======
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
     }
 
-    // Cho phép CORS cho frontend dev origins
+    // ====== 4) CORS (Local + Deploy) ======
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowCredentials(true);
-        config.addAllowedOriginPattern("http://localhost:*");
-        config.addAllowedOriginPattern("http://127.0.0.1:*");
-        config.addAllowedOriginPattern("http://0.0.0.0:*");
-        config.addAllowedHeader("*");
+
+        // Nếu bạn dùng JWT Bearer (Authorization header) thì thường KHÔNG cần credentials
+        // (credentials chỉ cần khi dùng cookie/session).
+        config.setAllowCredentials(false);
+
+        // ✅ Origins được phép (SỬA/THÊM domain frontend của bạn ở đây)
+        List<String> FRONTEND_ORIGINS = List.of(
+                "http://localhost:*",
+                "http://127.0.0.1:*",
+
+                // ====== DEPLOY DOMAINS (chọn cái bạn dùng) ======
+                "https://YOUR_DOMAIN.com",      // domain riêng (nếu có)
+                "https://*.vercel.app",         // Vercel
+                "https://*.netlify.app",        // Netlify
+                "https://*.railway.app"         // Railway (tuỳ dự án)
+        );
+
+        for (String origin : FRONTEND_ORIGINS) {
+            config.addAllowedOriginPattern(origin);
+        }
+
+        // Cho phép các method/headers
         config.addAllowedMethod("*");
+        config.addAllowedHeader("*");
+
+        // Expose header nếu cần (thường không bắt buộc cho Bearer token)
+        config.addExposedHeader("Authorization");
+
+        // Cache preflight
+        config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
     }
 
-    // Cấu hình filter chain
+    // ====== 5) Security Filter Chain ======
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // CORS
+                // Bật CORS theo bean CorsConfigurationSource ở trên
                 .cors(Customizer.withDefaults())
 
-                // Tắt CSRF (vì dùng JWT, REST API)
+                // Tắt CSRF (REST + JWT)
                 .csrf(AbstractHttpConfigurer::disable)
 
                 // Stateless session
@@ -86,42 +112,45 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
 
-                // Phân quyền
+                // Phân quyền endpoint
                 .authorizeHttpRequests(auth -> auth
-                    // Cho phép truy cập ảnh tĩnh
-                    .requestMatchers("/uploads/**").permitAll()
+                        // ✅ Cho phép test nhanh
+                        .requestMatchers("/", "/health").permitAll()
 
-                    // OPTIONS (CORS preflight) luôn được phép
-                    .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // Static uploads
+                        .requestMatchers("/uploads/**").permitAll()
 
-                        // Cho phép lấy danh sách sản phẩm và bàn không cần token (phục vụ Cashier chọn bàn)
+                        // Preflight request luôn cho phép
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // Public GET endpoints
                         .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/tables/**").permitAll()
 
-                        // Cho phép ALL HTTP methods trên invoice endpoints (POST, GET, DELETE, etc) không cần token
+                        // Invoice public (như bạn đang để)
                         .requestMatchers("/api/invoices", "/api/invoices/**").permitAll()
 
-                        // Cho phép upload ảnh không cần token
+                        // Upload public
                         .requestMatchers(HttpMethod.POST, "/api/upload/**").permitAll()
 
-                        // Cho phép login + swagger + đặt bàn (reservation) không cần token
+                        // Auth + Reservation + Swagger
                         .requestMatchers(
-                            "/api/auth/**",
-                            "/api/reservations",
-                            "/swagger-ui/**",
-                            "/swagger-ui.html",
-                            "/v3/api-docs/**",
-                            "/swagger-ui/index.html"
+                                "/api/auth/**",
+                                "/api/reservations",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/v3/api-docs/**",
+                                "/swagger-ui/index.html"
                         ).permitAll()
 
-                        // Các API khác yêu cầu đã đăng nhập (có JWT hợp lệ)
+                        // Còn lại bắt buộc có JWT
                         .anyRequest().authenticated()
                 )
 
-                // Đăng ký DaoAuthenticationProvider
+                // Provider
                 .authenticationProvider(daoAuthenticationProvider())
 
-                // Thêm JWT filter trước UsernamePasswordAuthenticationFilter
+                // JWT filter
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
