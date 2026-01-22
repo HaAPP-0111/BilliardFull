@@ -19,17 +19,22 @@ import {
 import api from "../api/axios";
 
 /* =========================
-   FIX ẢNH CHO DEPLOY
+   FIX ẢNH CHO DEPLOY (Vercel)
+   - Set VITE_API_URL = https://<backend-domain> trên Vercel
 ========================= */
 const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 
 const resolveImageUrl = (url) => {
   if (!url) return "";
-  if (/^https?:\/\//i.test(url)) return url; // đã là full url
+  if (/^https?:\/\//i.test(url)) return url; // full url
+
   const path = url.startsWith("/") ? url : `/${url}`;
+
+  // nếu quên set env => trả path để dễ debug (sẽ trỏ về domain hiện tại)
+  if (!API_URL) return path;
+
   return `${API_URL}${path}`;
 };
-
 /* ========================= */
 
 const EMPTY_PRODUCT = {
@@ -44,8 +49,10 @@ const EMPTY_PRODUCT = {
 export default function Products() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
+
   const [categories, setCategories] = useState(["all"]);
   const [selectedCategory, setSelectedCategory] = useState("all");
 
@@ -63,6 +70,8 @@ export default function Products() {
   const loadProducts = async () => {
     try {
       setLoading(true);
+      setError("");
+
       const size = 100;
       let currentPage = 0;
       let fetched = [];
@@ -85,9 +94,7 @@ export default function Products() {
 
       const cats = ["all"];
       fetched.forEach((p) => {
-        if (p.category && !cats.includes(p.category)) {
-          cats.push(p.category);
-        }
+        if (p.category && !cats.includes(p.category)) cats.push(p.category);
       });
       setCategories(cats);
       setPage(1);
@@ -128,9 +135,15 @@ export default function Products() {
 
   const openEditDialog = (p) => {
     setEditing(true);
-    setForm(p);
+    setForm({
+      ...EMPTY_PRODUCT,
+      ...p,
+      price: p?.price ?? "",
+      imageUrl: p?.imageUrl ?? "",
+    });
     setImageFile(null);
     setPreviewUrl("");
+    setError("");
     setDialogOpen(true);
   };
 
@@ -142,18 +155,36 @@ export default function Products() {
     const file = e.target.files?.[0];
     if (!file) return;
     setImageFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
+
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
   };
+
+  // tránh memory leak khi preview ảnh
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   const handleSave = async () => {
     try {
+      setError("");
+
       let imageUrl = form.imageUrl || "";
 
+      // upload file nếu user chọn ảnh mới
       if (imageFile) {
         const fd = new FormData();
         fd.append("image", imageFile);
-        const res = await api.post("/upload/product", fd);
-        imageUrl = res.data;
+
+        const res = await api.post("/upload/product", fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+
+        // hỗ trợ backend trả string hoặc object
+        imageUrl =
+          typeof res.data === "string" ? res.data : res.data?.url || "";
       }
 
       const payload = {
@@ -169,7 +200,7 @@ export default function Products() {
       }
 
       setDialogOpen(false);
-      loadProducts();
+      await loadProducts();
     } catch (e) {
       console.error(e);
       setError("Lưu sản phẩm không thành công.");
@@ -178,8 +209,13 @@ export default function Products() {
 
   const handleDelete = async (id) => {
     if (!window.confirm("Xóa sản phẩm này?")) return;
-    await api.delete(`/products/${id}`);
-    loadProducts();
+    try {
+      await api.delete(`/products/${id}`);
+      await loadProducts();
+    } catch (e) {
+      console.error(e);
+      setError("Xóa sản phẩm không thành công.");
+    }
   };
 
   /* =========================
@@ -194,18 +230,25 @@ export default function Products() {
         </Button>
       </Stack>
 
-      <Stack direction="row" spacing={1} mb={2}>
+      <Stack direction="row" spacing={1} mb={2} flexWrap="wrap">
         {categories.map((c) => (
           <Button
             key={c}
             size="small"
             variant={selectedCategory === c ? "contained" : "outlined"}
             onClick={() => setSelectedCategory(c)}
+            sx={{ mb: 1 }}
           >
             {c === "all" ? "Tất cả" : c}
           </Button>
         ))}
       </Stack>
+
+      {error && (
+        <Typography color="error" sx={{ mb: 2 }}>
+          {error}
+        </Typography>
+      )}
 
       {loading ? (
         <Typography>Đang tải...</Typography>
@@ -231,14 +274,28 @@ export default function Products() {
                       <img
                         src={resolveImageUrl(p.imageUrl)}
                         alt={p.name}
-                        style={{ width: 48, height: 48, objectFit: "cover" }}
+                        style={{
+                          width: 48,
+                          height: 48,
+                          objectFit: "cover",
+                          borderRadius: 6,
+                        }}
+                        onError={(e) => {
+                          // fallback nếu ảnh lỗi
+                          e.currentTarget.style.display = "none";
+                        }}
                       />
                     ) : (
                       "(No image)"
                     )}
                   </TableCell>
                   <TableCell>{p.name}</TableCell>
-                  <TableCell>{p.price.toLocaleString()} đ</TableCell>
+                  <TableCell>
+                    {typeof p.price === "number"
+                      ? p.price.toLocaleString()
+                      : Number(p.price || 0).toLocaleString()}{" "}
+                    đ
+                  </TableCell>
                   <TableCell>
                     <Button onClick={() => openEditDialog(p)}>EDIT</Button>
                     <Button color="error" onClick={() => handleDelete(p.id)}>
@@ -263,18 +320,37 @@ export default function Products() {
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth>
         <DialogTitle>{editing ? "Cập nhật" : "Thêm sản phẩm"}</DialogTitle>
         <DialogContent>
-          {error && <Typography color="error">{error}</Typography>}
           <Stack spacing={2} mt={1}>
-            <TextField label="Tên" name="name" value={form.name} onChange={handleChange} />
-            <TextField label="Giá" name="price" value={form.price} onChange={handleChange} />
-            <TextField label="Danh mục" name="category" value={form.category} onChange={handleChange} />
-            <TextField label="Mô tả" name="description" value={form.description} onChange={handleChange} />
+            <TextField
+              label="Tên"
+              name="name"
+              value={form.name}
+              onChange={handleChange}
+            />
+            <TextField
+              label="Giá"
+              name="price"
+              value={form.price}
+              onChange={handleChange}
+            />
+            <TextField
+              label="Danh mục"
+              name="category"
+              value={form.category}
+              onChange={handleChange}
+            />
+            <TextField
+              label="Mô tả"
+              name="description"
+              value={form.description}
+              onChange={handleChange}
+            />
 
             {(previewUrl || form.imageUrl) && (
               <img
                 src={previewUrl || resolveImageUrl(form.imageUrl)}
                 alt="preview"
-                style={{ width: 120 }}
+                style={{ width: 120, borderRadius: 8 }}
               />
             )}
 
