@@ -54,21 +54,30 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
+    // ✅ CORS FIX: allow localhost + all vercel apps (preview + prod)
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
+
+        // Nếu FE dùng cookie/session thì giữ true. (JWT localStorage vẫn OK)
         config.setAllowCredentials(true);
-        config.setAllowedOrigins(List.of(
+
+        // Dùng patterns để wildcard hoạt động
+        config.setAllowedOriginPatterns(List.of(
                 "http://localhost:3000",
-                "http://127.0.0.1:3000"
+                "http://127.0.0.1:3000",
+                "https://*.vercel.app"
         ));
+
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
+
         config.setExposedHeaders(List.of(
                 HttpHeaders.AUTHORIZATION,
                 HttpHeaders.CONTENT_DISPOSITION,
                 HttpHeaders.CONTENT_TYPE
         ));
+
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -83,7 +92,10 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // ✅ preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // public
                         .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
 
@@ -101,12 +113,10 @@ public class SecurityConfig {
                         // ✅ QUAN TRỌNG: permit export-pdf TRƯỚC invoices/**
                         .requestMatchers(HttpMethod.GET, "/api/invoices/*/export-pdf").permitAll()
 
-                        // invoices còn lại: bạn chọn 1 trong 2 dòng dưới
-                        // 1) nếu muốn invoices PRIVATE:
+                        // invoices còn lại: PRIVATE
                         .requestMatchers("/api/invoices/**").authenticated()
-                        // 2) nếu muốn invoices PUBLIC hết thì comment dòng authenticated ở trên và dùng dòng dưới:
-                        // .requestMatchers("/api/invoices/**").permitAll()
 
+                        // others
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(daoAuthenticationProvider())
