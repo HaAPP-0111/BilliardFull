@@ -5,6 +5,7 @@ import com.dinhquangha.backend.repository.BilliardTableRepository;
 import com.dinhquangha.backend.repository.EmployeeRepository;
 import com.dinhquangha.backend.repository.InvoiceRepository;
 import com.dinhquangha.backend.repository.ProductRepository;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,6 +15,13 @@ import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/admin/dashboard")
+@CrossOrigin(
+    origins = {
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
+    },
+    allowCredentials = "true"
+)
 public class DashboardController {
 
     private final BilliardTableRepository tableRepository;

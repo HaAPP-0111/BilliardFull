@@ -4,10 +4,10 @@ import com.dinhquangha.backend.security.JwtAuthenticationFilter;
 import com.dinhquangha.backend.security.UserDetailsServiceImpl;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -54,30 +54,21 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
-    // ====== CORS (Local + Deploy) ======
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-
-        // JWT Bearer => không cần credentials
-        config.setAllowCredentials(false);
-
-        // ✅ allowedOriginPattern để dùng wildcard
-        List<String> FRONTEND_ORIGINS = List.of(
-                "http://localhost:*",
-                "http://127.0.0.1:*",
-                "https://*.vercel.app"
-                // nếu bạn có domain riêng thì thêm:
-                // "https://billiard-full-o8e4.vercel.app"
-        );
-
-        for (String origin : FRONTEND_ORIGINS) {
-            config.addAllowedOriginPattern(origin);
-        }
-
-        config.addAllowedMethod("*");
-        config.addAllowedHeader("*");
-        config.addExposedHeader("Authorization");
+        config.setAllowCredentials(true);
+        config.setAllowedOrigins(List.of(
+                "http://localhost:3000",
+                "http://127.0.0.1:3000"
+        ));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setExposedHeaders(List.of(
+                HttpHeaders.AUTHORIZATION,
+                HttpHeaders.CONTENT_DISPOSITION,
+                HttpHeaders.CONTENT_TYPE
+        ));
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -85,33 +76,16 @@ public class SecurityConfig {
         return source;
     }
 
-    // ====== Security Filter Chain ======
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .cors(Customizer.withDefaults())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
                 .authorizeHttpRequests(auth -> auth
-                        // ✅ preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
-                        // ✅ STATIC UPLOADS (CỰC QUAN TRỌNG)
                         .requestMatchers("/uploads/**").permitAll()
-
-                        // auth
                         .requestMatchers("/api/auth/**").permitAll()
-
-                        // public GET
-                        .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/tables/**").permitAll()
-
-                        // invoice public (nếu bạn muốn public)
-                        .requestMatchers("/api/invoices", "/api/invoices/**").permitAll()
-
-                        // upload public (nếu bạn muốn)
-                        .requestMatchers(HttpMethod.POST, "/api/upload/**").permitAll()
 
                         // swagger
                         .requestMatchers(
@@ -120,10 +94,21 @@ public class SecurityConfig {
                                 "/v3/api-docs/**"
                         ).permitAll()
 
-                        // còn lại phải có JWT
+                        // public GET
+                        .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/tables/**").permitAll()
+
+                        // ✅ QUAN TRỌNG: permit export-pdf TRƯỚC invoices/**
+                        .requestMatchers(HttpMethod.GET, "/api/invoices/*/export-pdf").permitAll()
+
+                        // invoices còn lại: bạn chọn 1 trong 2 dòng dưới
+                        // 1) nếu muốn invoices PRIVATE:
+                        .requestMatchers("/api/invoices/**").authenticated()
+                        // 2) nếu muốn invoices PUBLIC hết thì comment dòng authenticated ở trên và dùng dòng dưới:
+                        // .requestMatchers("/api/invoices/**").permitAll()
+
                         .anyRequest().authenticated()
                 )
-
                 .authenticationProvider(daoAuthenticationProvider())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

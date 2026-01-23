@@ -72,10 +72,17 @@ public class InvoicePdfService {
             table.addCell(new Cell().add(new Paragraph("Thành tiền").setBold()).setTextAlignment(TextAlignment.CENTER));
             
             // Data rows
-            if (invoice.getItems() != null) {
-                for (InvoiceItem item : invoice.getItems()) {
-                    String productName = item.getProduct() != null ? item.getProduct().getName() : "N/A";
-                    table.addCell(new Cell().add(new Paragraph(productName)));
+                        if (invoice.getItems() != null) {
+                                for (InvoiceItem item : invoice.getItems()) {
+                                        String productName;
+                                        if (item.getProduct() != null && item.getProduct().getName() != null) {
+                                                productName = item.getProduct().getName();
+                                        } else if (item.getCustomName() != null && !item.getCustomName().isBlank()) {
+                                                productName = item.getCustomName();
+                                        } else {
+                                                productName = "N/A";
+                                        }
+                                        table.addCell(new Cell().add(new Paragraph(productName)));
                     table.addCell(new Cell().add(new Paragraph(String.valueOf(item.getQuantity())))
                             .setTextAlignment(TextAlignment.CENTER));
                     table.addCell(new Cell().add(new Paragraph(formatPrice(item.getUnitPrice())))
