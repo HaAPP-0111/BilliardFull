@@ -244,7 +244,6 @@ export default function Tables() {
             <TableRow>
               <TableCell>Mã</TableCell>
               <TableCell>Mô tả</TableCell>
-              <TableCell>Giờ đặt</TableCell>
               <TableCell>Tên bàn</TableCell>
               <TableCell>Trạng thái</TableCell>
               <TableCell>Giá/giờ</TableCell>
@@ -260,7 +259,6 @@ export default function Tables() {
               <TableRow key={t.id}>
                 <TableCell>{t.id}</TableCell>
                 <TableCell>{t.description || '-'}</TableCell>
-                <TableCell>{t.reservationTime ? new Date(t.reservationTime).toLocaleString() : '-'}</TableCell>
                 <TableCell>{t.name}</TableCell>
                 <TableCell>{t.status}</TableCell>
                 <TableCell>

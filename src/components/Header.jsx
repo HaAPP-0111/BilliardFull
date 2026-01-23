@@ -15,7 +15,6 @@ export default function Header() {
     { label: "Phòng/Bàn", path: "/tables" },
     { label: "Hóa đơn", path: "/bills" },
     // { label: "Đối tác", path: "#" },
-    { label: "Nhân viên", path: "/employees" },
     // { label: "Sổ quỹ", path: "#" },
     // { label: "Báo cáo", path: "#" },
   ];

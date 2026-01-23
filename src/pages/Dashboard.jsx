@@ -104,7 +104,7 @@ export default function Dashboard() {
           accentColor="#22c55e"
         />
         <StatCard
-          title="Nhân viên"
+          title="Admin"
           value={stats.employees}
           accentColor="#f97316"
         />

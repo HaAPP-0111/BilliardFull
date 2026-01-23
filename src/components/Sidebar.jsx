@@ -60,9 +60,6 @@ style={{
   <NavLink to="/bills" style={linkStyle}>
     🧾 Hóa đơn
   </NavLink>
-  <NavLink to="/employees" style={linkStyle}>
-    👨‍💼 Nhân viên
-  </NavLink>
 </div>
 );
 }
