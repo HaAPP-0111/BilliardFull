@@ -17,6 +17,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -54,15 +55,13 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
-    // ✅ CORS FIX: allow localhost + all vercel apps (preview + prod)
+    // CORS: localhost + vercel
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // Nếu FE dùng cookie/session thì giữ true. (JWT localStorage vẫn OK)
         config.setAllowCredentials(true);
 
-        // Dùng patterns để wildcard hoạt động
         config.setAllowedOriginPatterns(List.of(
                 "http://localhost:3000",
                 "http://127.0.0.1:3000",
@@ -88,39 +87,41 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .cors(c -> c.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authenticationProvider(daoAuthenticationProvider())
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
-                        // ✅ preflight
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // preflight
+                        .requestMatchers(new AntPathRequestMatcher("/**", HttpMethod.OPTIONS.name())).permitAll()
 
                         // public
-                        .requestMatchers("/uploads/**").permitAll()
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(new AntPathRequestMatcher("/uploads/**")).permitAll()
+                        .requestMatchers(new AntPathRequestMatcher("/api/auth/**")).permitAll()
 
                         // swagger
-                        .requestMatchers(
-                                "/swagger-ui/**",
-                                "/swagger-ui.html",
-                                "/v3/api-docs/**"
-                        ).permitAll()
+                        .requestMatchers(new AntPathRequestMatcher("/swagger-ui/**")).permitAll()
+                        .requestMatchers(new AntPathRequestMatcher("/swagger-ui.html")).permitAll()
+                        .requestMatchers(new AntPathRequestMatcher("/v3/api-docs/**")).permitAll()
 
                         // public GET
-                        .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/tables/**").permitAll()
+                        .requestMatchers(new AntPathRequestMatcher("/api/products/**", HttpMethod.GET.name())).permitAll()
+                        .requestMatchers(new AntPathRequestMatcher("/api/tables/**", HttpMethod.GET.name())).permitAll()
 
-                        // ✅ QUAN TRỌNG: permit export-pdf TRƯỚC invoices/**
-                        .requestMatchers(HttpMethod.GET, "/api/invoices/*/export-pdf").permitAll()
+                        // ✅ EXPORT PDF public (khớp /api/invoices/26/export-pdf)
+                        .requestMatchers(new AntPathRequestMatcher("/api/invoices/*/export-pdf", HttpMethod.GET.name()))
+                        .permitAll()
 
                         // invoices còn lại: PRIVATE
-                        .requestMatchers("/api/invoices/**").authenticated()
+                        .requestMatchers(new AntPathRequestMatcher("/api/invoices/**")).authenticated()
 
-                        // others
+                        // (tuỳ bạn) cho /error public để đỡ loop
+                        .requestMatchers(new AntPathRequestMatcher("/error")).permitAll()
+
                         .anyRequest().authenticated()
-                )
-                .authenticationProvider(daoAuthenticationProvider())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                );
 
         return http.build();
     }
