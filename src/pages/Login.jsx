@@ -44,13 +44,13 @@ export default function Login() {
   // - label không bị đè
   const fieldSx = {
     "& .MuiOutlinedInput-root": {
-      backgroundColor: "rgba(255,255,255,0.10)",
+      backgroundColor: "rgba(17, 185, 241, 0.9)",
       borderRadius: 2,
-      color: "rgba(255,255,255,0.95)",
+      color: "rgba(23, 21, 21, 0.95)",
     },
 
     "& .MuiInputLabel-root": {
-      color: "rgba(255,255,255,0.80)",
+      color: "rgba(17, 185, 241, 0.9)",
       backgroundColor: "rgba(8,10,16,0.78)",
       padding: "0 6px",
       borderRadius: 1,

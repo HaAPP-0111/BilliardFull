@@ -22,6 +22,7 @@ import {
 } from "@mui/material";
 import CloseIcon from '@mui/icons-material/Close';
 import api from "../api/axios";
+import { formatVND } from "../utils/currency";
 
 export default function Bills() {
   const [invoices, setInvoices] = useState([]);
@@ -137,10 +138,10 @@ export default function Bills() {
                     <TableCell>{inv.id}</TableCell>
                     <TableCell>{inv.customerName || '-'}</TableCell>
                     <TableCell>{inv.createdAt ? new Date(inv.createdAt).toLocaleString() : "-"}</TableCell>
-                    <TableCell>{inv.subtotal ?? 0}</TableCell>
-                    <TableCell>{inv.discountAmount ?? 0}</TableCell>
-                    <TableCell>{inv.taxAmount ?? 0}</TableCell>
-                    <TableCell>{inv.total ?? 0}</TableCell>
+                    <TableCell>{formatVND(inv.subtotal)}</TableCell>
+                    <TableCell>{formatVND(inv.discountAmount)}</TableCell>
+                    <TableCell>{formatVND(inv.taxAmount)}</TableCell>
+                    <TableCell>{formatVND(inv.total)}</TableCell>
                     <TableCell>
                       <Stack direction="row" spacing={1}>
                         <Button size="small" variant="outlined" onClick={() => openDetail(inv.id)}>
@@ -192,18 +193,18 @@ export default function Bills() {
                     <TableRow key={it.id}>
                       <TableCell>{it.product?.name}</TableCell>
                       <TableCell>{it.quantity}</TableCell>
-                      <TableCell>{it.unitPrice}</TableCell>
-                      <TableCell>{it.lineTotal}</TableCell>
+                      <TableCell>{formatVND(it.unitPrice)}</TableCell>
+                      <TableCell>{formatVND(it.lineTotal)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
 
               <Stack direction="column" spacing={1} mt={2}>
-                <Typography>Subtotal: {invoiceDetail.subtotal}</Typography>
-                <Typography>Discount: {invoiceDetail.discountAmount} ({invoiceDetail.discountPercent}%)</Typography>
-                <Typography>Tax: {invoiceDetail.taxAmount} ({invoiceDetail.taxPercent}%)</Typography>
-                <Typography variant="h6">Total: {invoiceDetail.total}</Typography>
+                <Typography>Subtotal: {formatVND(invoiceDetail.subtotal)}</Typography>
+                <Typography>Discount: {formatVND(invoiceDetail.discountAmount)} ({invoiceDetail.discountPercent}%)</Typography>
+                <Typography>Tax: {formatVND(invoiceDetail.taxAmount)} ({invoiceDetail.taxPercent}%)</Typography>
+                <Typography variant="h6">Total: {formatVND(invoiceDetail.total)}</Typography>
               </Stack>
             </div>
           ) : (

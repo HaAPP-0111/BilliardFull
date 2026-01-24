@@ -5,17 +5,22 @@ import Login from "./pages/Login";
 import Tables from "./pages/Tables";
 import Products from "./pages/Products";
 import Bills from "./pages/Bills";
+import Employees from "./pages/Employees";
 import Dashboard from "./pages/Dashboard";
 import Cashier from "./pages/Cashier";
 
 import ProtectedRoute from "./routes/ProtectedRoute";
 import Layout from "./components/Layout";
+import TvBoards from "./pages/TvBoards";
+
 
 export default function App() {
   return (
     <Routes>
       {/* Trang đăng nhập */}
       <Route path="/login" element={<Login />} />
+      <Route path="/tv" element={<TvBoards />} />
+
 
       {/* Khu vực admin */}
       <Route
@@ -33,6 +38,7 @@ export default function App() {
         <Route path="tables" element={<Tables />} />
         <Route path="products" element={<Products />} />
         <Route path="bills" element={<Bills />} />
+        <Route path="employees" element={<Employees />} />
       </Route>
     </Routes>
   );

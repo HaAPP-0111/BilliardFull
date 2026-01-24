@@ -17,6 +17,7 @@ import {
   Pagination,
 } from "@mui/material";
 import api from "../api/axios";
+import { formatVND } from "../utils/currency";
 
 /* =========================
    FIX ẢNH CHO DEPLOY (Vercel)
@@ -290,12 +291,7 @@ export default function Products() {
                     )}
                   </TableCell>
                   <TableCell>{p.name}</TableCell>
-                  <TableCell>
-                    {typeof p.price === "number"
-                      ? p.price.toLocaleString()
-                      : Number(p.price || 0).toLocaleString()}{" "}
-                    đ
-                  </TableCell>
+                  <TableCell>{formatVND(p.price)}</TableCell>
                   <TableCell>
                     <Button onClick={() => openEditDialog(p)}>EDIT</Button>
                     <Button color="error" onClick={() => handleDelete(p.id)}>

@@ -16,6 +16,7 @@ import {
   TextField,
 } from "@mui/material";
 import api from "../api/axios";
+import { formatVND } from "../utils/currency";
 
 const EMPTY_TABLE = {
   id: null,
@@ -33,9 +34,6 @@ export default function Tables() {
   const [editing, setEditing] = useState(false); // false = create, true = edit
   const [form, setForm] = useState(EMPTY_TABLE);
   const [error, setError] = useState("");
-
-  const [imageFile, setImageFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState("");
 
   const load = async () => {
     try {
@@ -100,12 +98,12 @@ export default function Tables() {
         const durationHours = Math.floor(durationMinutes / 60);
         const remainingMinutes = durationMinutes % 60;
         
-        const totalCost = session.total != null ? session.total.toLocaleString() : "0";
+        const totalCost = formatVND(session.total ?? 0);
         const timeStr = durationHours > 0 
           ? `${durationHours}h ${remainingMinutes}m` 
           : `${durationMinutes}m`;
         
-        alert(`Thời gian chơi: ${timeStr}\nTổng tiền: ${totalCost} đ`);
+        alert(`Thời gian chơi: ${timeStr}\nTổng tiền: ${totalCost}`);
       }
 
       // Reload data after ending session
@@ -120,8 +118,6 @@ export default function Tables() {
     setEditing(false);
     setForm(EMPTY_TABLE);
     setError("");
-    setImageFile(null);
-    setPreviewUrl("");
     setDialogOpen(true);
   };
 
@@ -136,8 +132,6 @@ export default function Tables() {
       status: table.status,
     });
     setError("");
-    setImageFile(null);
-    setPreviewUrl("");
     setDialogOpen(true);
   };
 
@@ -148,17 +142,6 @@ export default function Tables() {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) {
-      setImageFile(null);
-      setPreviewUrl("");
-      return;
-    }
-    setImageFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
   };
 
   const handleSave = async () => {
@@ -174,26 +157,9 @@ export default function Tables() {
     }
 
     try {
-      // 1. Upload ảnh trước (nếu có chọn file mới)
-      let imageUrl = form.imageUrl?.trim() || "";
-      if (imageFile) {
-        try {
-          const fd = new FormData();
-          fd.append("image", imageFile);
+      const imageUrl = form.imageUrl?.trim() || "";
 
-          const uploadRes = await api.post("/upload/product", fd, {
-            headers: { "Content-Type": "multipart/form-data" },
-          });
-
-          imageUrl = uploadRes.data; // server trả /uploads/xxx.png
-        } catch (uploadErr) {
-          console.error("Failed to upload image:", uploadErr);
-          setError("Upload ảnh không thành công. Hãy thử lại.");
-          return;
-        }
-      }
-
-      // 2. Gửi table lên backend
+      // Gửi table lên backend
       const payload = {
         name: form.name.trim(),
         pricePerHour: priceNumber,
@@ -261,12 +227,7 @@ export default function Tables() {
                 <TableCell>{t.description || '-'}</TableCell>
                 <TableCell>{t.name}</TableCell>
                 <TableCell>{t.status}</TableCell>
-                <TableCell>
-                  {typeof t.pricePerHour === "number"
-                    ? t.pricePerHour.toLocaleString()
-                    : t.pricePerHour}
-                  {" đ"}
-                </TableCell>
+                <TableCell>{formatVND(t.pricePerHour)}</TableCell>
                 <TableCell>
                   {t.currentSession && t.currentSession.startTime
                     ? new Date(t.currentSession.startTime).toLocaleString()
@@ -279,9 +240,7 @@ export default function Tables() {
                 </TableCell>
                 <TableCell>
                   {t.currentSession && t.currentSession.total != null
-                    ? (typeof t.currentSession.total === 'number'
-                        ? t.currentSession.total.toLocaleString() + ' đ'
-                        : t.currentSession.total + ' đ')
+                    ? formatVND(t.currentSession.total)
                     : "-"}
                 </TableCell>
                 <TableCell>
@@ -372,34 +331,6 @@ export default function Tables() {
               minRows={2}
             />
 
-            {/* Preview ảnh */}
-            <div>
-              <Typography variant="body2" sx={{ mb: 1 }}>
-                Hình ảnh
-              </Typography>
-              {previewUrl || form.imageUrl ? (
-                <img
-                  src={previewUrl || form.imageUrl}
-                  alt="preview"
-                  style={{
-                    width: 120,
-                    height: 120,
-                    objectFit: "cover",
-                    borderRadius: 8,
-                    marginBottom: 8,
-                  }}
-                />
-              ) : (
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                  Chưa chọn ảnh
-                </Typography>
-              )}
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-              />
-            </div>
           </Stack>
         </DialogContent>
         <DialogActions>

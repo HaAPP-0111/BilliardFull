@@ -26,6 +26,7 @@ import {
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import DeleteIcon from "@mui/icons-material/Delete";
 import api from "../api/axios";
+import { formatVND } from "../utils/currency";
 
 const PRODUCTS_PER_PAGE = 9;
 const INVOICE_STORAGE_KEY = "cashier_invoice_state";
@@ -435,7 +436,7 @@ const Cashier = () => {
                         </Box>
                         <CardContent sx={{ p: 1 }}>
                           <Typography variant="body2" sx={{ fontWeight: "bold", mb: 0.5 }}>{p.name}</Typography>
-                          <Typography variant="body2" sx={{ color: "red", fontWeight: "bold" }}>{Number(p.price).toLocaleString("vi-VN")}đ</Typography>
+                          <Typography variant="body2" sx={{ color: "red", fontWeight: "bold" }}>{formatVND(p.price)}</Typography>
                         </CardContent>
                         </Card>
                       </Grid>
@@ -468,7 +469,7 @@ const Cashier = () => {
             ) : (
               <>
                 <Typography variant="h6" sx={{ mb: 2, fontWeight: "bold" }}>📋 Hoá Đơn</Typography>
-                <TextField label="Tên khách hàng (tuỳ chọn)" size="small" fullWidth value={customerName} onChange={(e) => handleCustomerNameChange(e.target.value)} sx={{ mb: 2 }} />
+                <TextField label="Tên khách hàng " size="small" fullWidth value={customerName} onChange={(e) => handleCustomerNameChange(e.target.value)} sx={{ mb: 2 }} />
                 <TableContainer sx={{ mb: 2, flex: 1, overflow: "auto" }}>
                   <Table size="small" stickyHeader>
                     <TableHead>
@@ -485,8 +486,8 @@ const Cashier = () => {
                         <TableRow key={item.id}>
                           <TableCell sx={{ fontSize: "0.85rem" }}>{item.productName}</TableCell>
                           <TableCell align="right" sx={{ fontSize: "0.85rem" }}>{item.quantity}</TableCell>
-                          <TableCell align="right" sx={{ fontSize: "0.85rem" }}>{Number(item.price).toLocaleString("vi-VN")}đ</TableCell>
-                          <TableCell align="right" sx={{ fontSize: "0.85rem", fontWeight: "bold" }}>{Number(item.lineTotal).toLocaleString("vi-VN")}đ</TableCell>
+                          <TableCell align="right" sx={{ fontSize: "0.85rem" }}>{formatVND(item.price)}</TableCell>
+                          <TableCell align="right" sx={{ fontSize: "0.85rem", fontWeight: "bold" }}>{formatVND(item.lineTotal)}</TableCell>
                           <TableCell align="center">
                             <IconButton size="small" color="error" onClick={() => handleRemoveItem(item.id)}>
                               <DeleteIcon fontSize="small" />
@@ -500,21 +501,21 @@ const Cashier = () => {
                 <Box sx={{ borderTop: "2px solid #ddd", pt: 2 }}>
                   <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1 }}>
                     <Typography>Tạm tính:</Typography>
-                    <Typography sx={{ fontWeight: "bold" }}>{Number(invoice.subtotal).toLocaleString("vi-VN")}đ</Typography>
+                    <Typography sx={{ fontWeight: "bold" }}>{formatVND(invoice.subtotal)}</Typography>
                   </Box>
                   <Box sx={{ display: "flex", gap: 1, mb: 1, alignItems: "center" }}>
                     <Typography sx={{ flex: 1 }}>Chiết khấu (%):</Typography>
                     <TextField type="number" size="small" inputProps={{ step: "0.1", min: "0", max: "100" }} sx={{ width: 80 }} value={invoice.discountPercent} onChange={(e) => { const val = parseFloat(e.target.value) || 0; const next = { ...invoice, discountPercent: val }; recalcInvoice(next); }} />
-                    <Typography sx={{ fontWeight: "bold", minWidth: 100, textAlign: "right" }}>-{Number(invoice.discountAmount).toLocaleString("vi-VN")}đ</Typography>
+                    <Typography sx={{ fontWeight: "bold", minWidth: 100, textAlign: "right" }}>-{formatVND(invoice.discountAmount)}</Typography>
                   </Box>
                   <Box sx={{ display: "flex", gap: 1, mb: 2, alignItems: "center" }}>
                     <Typography sx={{ flex: 1 }}>Thuế (%):</Typography>
                     <TextField type="number" size="small" inputProps={{ step: "0.1", min: "0", max: "100" }} sx={{ width: 80 }} value={invoice.taxPercent} onChange={(e) => { const val = parseFloat(e.target.value) || 0; const next = { ...invoice, taxPercent: val }; recalcInvoice(next); }} />
-                    <Typography sx={{ fontWeight: "bold", minWidth: 100, textAlign: "right" }}>+{Number(invoice.taxAmount).toLocaleString("vi-VN")}đ</Typography>
+                    <Typography sx={{ fontWeight: "bold", minWidth: 100, textAlign: "right" }}>+{formatVND(invoice.taxAmount)}</Typography>
                   </Box>
                   <Box sx={{ display: "flex", justifyContent: "space-between", py: 1.5, px: 1, bgcolor: "#e3f2fd", borderRadius: 1, mb: 2 }}>
                     <Typography variant="h6" sx={{ fontWeight: "bold" }}>TỔNG:</Typography>
-                    <Typography variant="h6" sx={{ fontWeight: "bold", color: "#d32f2f" }}>{Number(invoice.total).toLocaleString("vi-VN")}đ</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: "bold", color: "#d32f2f" }}>{formatVND(invoice.total)}</Typography>
                   </Box>
                   <Box sx={{ display: "flex", gap: 1 }}>
                     <Button variant="contained" color="success" fullWidth size="large" onClick={handleCheckout} disabled={invoice.items.length === 0 || loading} sx={{ fontWeight: "bold", flex: 1 }}>{loading ? "⏳ Đang xử lý..." : "💰 Thanh Toán"}</Button>
@@ -637,7 +638,7 @@ const Cashier = () => {
           {selectedProduct && (
             <Box sx={{ mt: 2 }}>
               <Typography sx={{ mb: 2 }}>
-                <strong>{selectedProduct.name}</strong> - Giá: <span style={{ color: "red", fontWeight: "bold" }}>{Number(selectedProduct.price).toLocaleString("vi-VN")}đ</span>
+                <strong>{selectedProduct.name}</strong> - Giá: <span style={{ color: "red", fontWeight: "bold" }}>{formatVND(selectedProduct.price)}</span>
               </Typography>
               <TextField label="Số lượng" type="number" fullWidth inputProps={{ min: "1", step: "1" }} value={productQty} onChange={(e) => setProductQty(parseInt(e.target.value) || 1)} />
               <Box sx={{ mt: 2, display: "flex", gap: 1 }}>
