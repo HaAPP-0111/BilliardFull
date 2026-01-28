@@ -24,12 +24,11 @@ import SortRoundedIcon from "@mui/icons-material/SortRounded";
 
 import api from "../api/axios";
 import bg from "../assets/bida-cafe.png";
-import { formatVND } from "../utils/currency";
 
-/** ✅ Làm tròn tiền để tránh số lẻ kiểu 9.166,667đ */
+/** format VND (làm tròn để tránh số lẻ) */
 function toVnd(n) {
   const val = Math.round(Number(n || 0));
-  return formatVND(val);
+  return val.toLocaleString("vi-VN") + "đ";
 }
 function pad2(x) {
   return String(x).padStart(2, "0");
@@ -51,7 +50,7 @@ function getHourlyRate(table) {
 
 /**
  * ✅ Parse LocalDateTime từ Spring (YYYY-MM-DDTHH:mm:ss)
- * Cách này ổn định trên mọi browser, không phụ thuộc Date.parse.
+ * Không dùng Date.parse(string) vì mỗi browser parse khác nhau.
  */
 function parseLocalDateTime(s) {
   if (!s) return null;
@@ -96,17 +95,15 @@ export default function TvBoards() {
   const [now, setNow] = useState(Date.now());
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
 
-  // filter + sort
   const [filter, setFilter] = useState("all"); // all | playing | empty
   const [sort, setSort] = useState("playing_first"); // playing_first | longest | id
 
-  // style chữ TV
   const headerText = { color: "rgba(255,255,255,0.95)" };
   const lineSx = { color: "rgba(255,255,255,0.92)" };
   const subSx = { color: "rgba(255,255,255,0.75)" };
 
   // tick timer 1s
-useEffect(() => {
+  useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
@@ -127,7 +124,6 @@ useEffect(() => {
       const tableList = Array.isArray(tablesRes.data) ? tablesRes.data : [];
       setTables(tableList);
 
-      // lấy session active cho từng bàn (invoiceController: /api/invoices/sessions/{tableId})
       const pairs = await Promise.all(
         tableList.map(async (t) => {
           const id = t?.id;
@@ -137,7 +133,6 @@ useEffect(() => {
             const r = await api.get(`/invoices/sessions/${id}`);
             return [id, r.data];
           } catch (e) {
-            // 404 nghĩa là bàn không có session active
             if (e?.response?.status === 404) return [id, null];
             throw e;
           }
@@ -192,39 +187,26 @@ useEffect(() => {
 
       const hourly = getHourlyRate(t);
 
-      // ✅ clamp elapsedMs tránh âm (lệch giờ/máy)
+      // ✅ clamp elapsed tránh âm (lệch giờ / parse sai)
       const elapsedMsRaw = playing ? now - start.getTime() : 0;
       const elapsedMs = Math.max(0, elapsedMsRaw);
 
-      // ✅ tính theo phút (đúng nghĩa)
+      // ✅ tính theo phút (không nhảy lẻ)
       const elapsedMinutes = playing ? Math.floor(elapsedMs / 60000) : 0;
 
-      // ✅ tiền theo phút + làm tròn (tránh số lẻ kỳ cục)
+      // ✅ tiền theo phút + làm tròn
       const money = playing ? Math.round((elapsedMinutes * hourly) / 60) : 0;
 
-      // cảnh báo
       const hours = playing ? elapsedMs / 3600000 : 0;
       const warnLevel = hours >= 3 ? "danger" : hours >= 2 ? "warn" : "none";
 
-      return {
-table: t,
-        session,
-        start,
-        playing,
-        elapsedMs,
-        elapsedMinutes,
-        hourly,
-        money,
-        warnLevel,
-      };
+      return { table: t, session, start, playing, elapsedMs, hourly, money, warnLevel };
     });
 
-    // filter
     let filtered = arr;
     if (filter === "playing") filtered = arr.filter((x) => x.playing);
     if (filter === "empty") filtered = arr.filter((x) => !x.playing);
 
-    // sort
     const byId = (a, b) => Number(a.table?.id || 0) - Number(b.table?.id || 0);
 
     if (sort === "id") filtered.sort(byId);
@@ -267,7 +249,6 @@ table: t,
       }}
     >
       <Container maxWidth="xl">
-        {/* Header */}
         <Paper
           elevation={10}
           sx={{
@@ -305,7 +286,8 @@ table: t,
                     </b>
                   </Typography>
                 </Box>
-<Stack direction="row" spacing={1} alignItems="center">
+
+                <Stack direction="row" spacing={1} alignItems="center">
                   <Tooltip title="Refresh ngay">
                     <IconButton
                       onClick={fetchData}
@@ -322,14 +304,8 @@ table: t,
                   <Button
                     onClick={toggleFullscreen}
                     variant="contained"
-                    startIcon={
-                      isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />
-                    }
-                    sx={{
-                      borderRadius: 2,
-                      textTransform: "none",
-                      fontWeight: 900,
-                    }}
+                    startIcon={isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+                    sx={{ borderRadius: 2, textTransform: "none", fontWeight: 900 }}
                   >
                     {isFullscreen ? "Thoát full screen" : "Full screen"}
                   </Button>
@@ -356,11 +332,7 @@ table: t,
                   }}
                 />
                 <Chip
-                  label={
-                    lastUpdated
-                      ? `Cập nhật: ${lastUpdated.toLocaleTimeString()}`
-                      : "Cập nhật: -"
-                  }
+                  label={lastUpdated ? `Cập nhật: ${lastUpdated.toLocaleTimeString()}` : "Cập nhật: -"}
                   sx={{
                     backgroundColor: "rgba(255,255,255,0.14)",
                     color: "#fff",
@@ -370,7 +342,6 @@ table: t,
                 />
               </Stack>
 
-              {/* filter + sort */}
               <Stack
                 direction={{ xs: "column", md: "row" }}
                 gap={1.5}
@@ -378,17 +349,12 @@ table: t,
                 alignItems={{ xs: "stretch", md: "center" }}
                 justifyContent="space-between"
               >
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  alignItems="center"
-                  flexWrap="wrap"
-                >
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                   <Typography sx={subSx} fontWeight={800}>
                     Lọc:
                   </Typography>
                   <ToggleButtonGroup
-value={filter}
+                    value={filter}
                     exclusive
                     onChange={(_, v) => v && setFilter(v)}
                     size="small"
@@ -412,12 +378,7 @@ value={filter}
                   </ToggleButtonGroup>
                 </Stack>
 
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  alignItems="center"
-                  flexWrap="wrap"
-                >
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                   <SortRoundedIcon sx={{ opacity: 0.85 }} />
                   <Typography sx={subSx} fontWeight={800}>
                     Sắp xếp:
@@ -449,7 +410,6 @@ value={filter}
               </Stack>
             </Box>
 
-            {/* Top money */}
             <Paper
               elevation={0}
               sx={{
@@ -462,7 +422,7 @@ value={filter}
             >
               <Typography fontWeight={900} sx={headerText} mb={1}>
                 Top bàn tạm tính
-</Typography>
+              </Typography>
               {topMoney.length === 0 ? (
                 <Typography sx={subSx}>Chưa có bàn đang chơi.</Typography>
               ) : (
@@ -494,7 +454,6 @@ value={filter}
           </Alert>
         )}
 
-        {/* Body */}
         {loading ? (
           <Stack alignItems="center" mt={6} gap={2}>
             <CircularProgress />
@@ -507,13 +466,8 @@ value={filter}
             {derived.map((x) => {
               const { table: t, session, playing, start, elapsedMs, hourly, money, warnLevel } = x;
 
-              const title = getTableName(t);
+              const accent = playing ? "rgba(255, 80, 80, 0.55)" : "rgba(80, 255, 140, 0.45)";
 
-              const accent = playing
-                ? "rgba(255, 80, 80, 0.55)"
-                : "rgba(80, 255, 140, 0.45)";
-
-              // cảnh báo viền
               const borderGlow =
                 warnLevel === "danger"
                   ? "0 0 0 2px rgba(255,70,70,0.55)"
@@ -522,14 +476,10 @@ value={filter}
                   : "none";
 
               const warnChip =
-                warnLevel === "danger"
-                  ? "Quá lâu > 3h"
-                  : warnLevel === "warn"
-                  ? "Cảnh báo > 2h"
-                  : "";
+                warnLevel === "danger" ? "Quá lâu > 3h" : warnLevel === "warn" ? "Cảnh báo > 2h" : "";
 
               return (
-                <Grid item xs={12} sm={6} md={4} lg={3} key={t?.id ?? title}>
+                <Grid item xs={12} sm={6} md={4} lg={3} key={t?.id ?? getTableName(t)}>
                   <Paper
                     elevation={10}
                     sx={{
@@ -546,7 +496,7 @@ value={filter}
                       boxShadow: borderGlow,
                     }}
                   >
-<Box
+                    <Box
                       sx={{
                         position: "absolute",
                         left: 0,
@@ -560,7 +510,7 @@ value={filter}
                     <Stack spacing={1.2} sx={{ pl: 1 }}>
                       <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
                         <Typography variant="h5" fontWeight={900} sx={headerText}>
-                          {title}
+                          {getTableName(t)}
                         </Typography>
 
                         <Stack direction="row" spacing={1} alignItems="center">
@@ -596,13 +546,11 @@ value={filter}
                       {playing ? (
                         <>
                           <Typography sx={lineSx}>
-                            Bắt đầu:{" "}
-                            <b>{start ? start.toLocaleTimeString() : "-"}</b>
+                            Bắt đầu: <b>{start ? start.toLocaleTimeString() : "-"}</b>
                           </Typography>
 
                           <Typography sx={lineSx}>
-                            Thời gian:{" "}
-                            <b style={{ fontSize: 18 }}>{formatHMS(elapsedMs)}</b>
+                            Thời gian: <b style={{ fontSize: 18 }}>{formatHMS(elapsedMs)}</b>
                           </Typography>
 
                           <Typography sx={lineSx}>
@@ -610,13 +558,12 @@ value={filter}
                           </Typography>
 
                           <Typography sx={lineSx}>
-                            Tạm tính (theo phút):{" "}
-                            <b style={{ fontSize: 18 }}>{toVnd(money)}</b>
+                            Tạm tính (theo phút): <b style={{ fontSize: 18 }}>{toVnd(money)}</b>
                           </Typography>
 
                           <Typography variant="caption" sx={subSx}>
                             Session: {session?.id ?? "-"}
-</Typography>
+                          </Typography>
                         </>
                       ) : (
                         <>

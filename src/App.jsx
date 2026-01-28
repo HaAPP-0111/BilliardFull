@@ -12,6 +12,8 @@ import Cashier from "./pages/Cashier";
 import ProtectedRoute from "./routes/ProtectedRoute";
 import Layout from "./components/Layout";
 import TvBoards from "./pages/TvBoards";
+import Landing from "./pages/Landing";
+
 
 
 export default function App() {
@@ -20,6 +22,9 @@ export default function App() {
       {/* Trang đăng nhập */}
       <Route path="/login" element={<Login />} />
       <Route path="/tv" element={<TvBoards />} />
+
+      <Route path="/welcome" element={<Landing />} />
+
 
 
       {/* Khu vực admin */}
