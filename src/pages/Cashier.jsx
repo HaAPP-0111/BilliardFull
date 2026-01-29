@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Box,
   Paper,
@@ -83,8 +83,41 @@ const clearInvoiceForTable = (tableId) => {
   }
 };
 
+// ====== Helpers cho dòng tiền bàn (sau khi kết thúc) ======
+const toDurationText = (startTime, endTime) => {
+  try {
+    const s = new Date(startTime);
+    const e = new Date(endTime);
+    const minutes = Math.max(1, Math.floor((e - s) / 60000));
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return h > 0 ? `${h}h${m}p` : `${m}p`;
+  } catch {
+    return "";
+  }
+};
+
+const buildTableFeeItem = ({ tableName, startTime, endTime, total }) => {
+  const durationText = toDurationText(startTime, endTime);
+  const name = durationText ? `${tableName} - ${durationText}` : `${tableName}`;
+  const totalNum = Number(total || 0);
+
+  return {
+    id: `table-fee-${Date.now()}`, // unique
+    productId: null,
+    productName: name,
+    price: totalNum,
+    quantity: 1,
+    lineTotal: totalNum,
+    __type: "TABLE_FEE",
+  };
+};
+
 const Cashier = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const tableIdFromQuery = searchParams.get("tableId"); // ✅ nhận từ Tables.jsx
+
   const [tables, setTables] = useState([]);
   const [selectedTable, setSelectedTable] = useState(null);
   const [products, setProducts] = useState([]);
@@ -95,15 +128,19 @@ const Cashier = () => {
 
   const [tableDialogOpen, setTableDialogOpen] = useState(false);
   const [addTableOpen, setAddTableOpen] = useState(false);
-  const [tableForm, setTableForm] = useState({ name: "", capacity: "", description: "", imageUrl: "" });
+  const [tableForm, setTableForm] = useState({
+    name: "",
+    capacity: "",
+    description: "",
+    imageUrl: "",
+  });
   const [tableImageFile, setTableImageFile] = useState(null);
-  
+
   const [addProductOpen, setAddProductOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [productQty, setProductQty] = useState(1);
 
   const [invoice, setInvoice] = useState(createEmptyInvoice);
-
   const [customerName, setCustomerName] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -112,6 +149,7 @@ const Cashier = () => {
     if (!tableId) return;
     const invoiceToPersist = { ...nextInvoice };
     delete invoiceToPersist.id;
+
     const nameToPersist = nextCustomerName || "";
     const hasMeaningfulData =
       invoiceToPersist.items.length > 0 ||
@@ -132,7 +170,6 @@ const Cashier = () => {
 
   const handleCustomerNameChange = (value) => {
     setCustomerName(value);
-    persistInvoiceState(invoice, value);
   };
 
   const filteredProducts = useMemo(
@@ -154,6 +191,19 @@ const Cashier = () => {
     setCurrentPage((prev) => Math.min(prev, maxPage));
   }, [filteredProducts.length]);
 
+  // ✅ Khi vào Cashier bằng link /cashier?tableId=... thì auto chọn bàn & load session
+  useEffect(() => {
+    if (!tableIdFromQuery) return;
+    if (!tables || tables.length === 0) return;
+
+    const found = tables.find((t) => String(t.id) === String(tableIdFromQuery));
+    if (found) {
+      // auto select
+      handleSelectTable(found, { silent: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableIdFromQuery, tables]);
+
   const loadTables = async () => {
     try {
       setLoading(true);
@@ -169,7 +219,7 @@ const Cashier = () => {
 
   const loadProducts = async () => {
     try {
-      const size = 50; // tải nhiều sản phẩm mỗi lần gọi để lấp đầy phân trang
+      const size = 50;
       let page = 0;
       let allProducts = [];
       let hasNext = true;
@@ -200,52 +250,43 @@ const Cashier = () => {
     }
   };
 
-  const handleSelectTable = async (table) => {
+  // ✅ thêm option silent để auto chọn bàn từ query mà không bật dialog
+  const handleSelectTable = async (table, options = {}) => {
     setSelectedTable(table);
     setTableDialogOpen(false);
-    
-    // Load session data cho bàn này
+
     try {
       const res = await api.get(`/tables/${table.id}`);
       const tableData = res.data;
 
-      const storedState = getStoredInvoiceForTable(table.id);
-      if (storedState) {
-        const storedCustomer = storedState.customerName || "";
-        setCustomerName(storedCustomer);
-        const restoredInvoice = { ...createEmptyInvoice(), ...storedState.invoice };
-        recalcInvoice(restoredInvoice, { tableId: table.id, customerNameOverride: storedCustomer });
-        return;
-      }
-      
-      // Nếu bàn có session đã kết thúc (có endTime và total), tự động thêm vào hoá đơn
+      // ✅ Nếu session đã kết thúc (có endTime + total) => auto add item tiền bàn vào invoice
       const items = [];
-      if (tableData.currentSession && tableData.currentSession.endTime && tableData.currentSession.total) {
-        const startTime = new Date(tableData.currentSession.startTime);
-        const endTime = new Date(tableData.currentSession.endTime);
-        const durationMinutes = Math.floor((endTime - startTime) / (1000 * 60));
-        const hours = Math.floor(durationMinutes / 60);
-        const minutes = durationMinutes % 60;
-        const durationText = hours > 0 ? `${hours}h${minutes}p` : `${minutes}p`;
-        
-        items.push({
-          id: Date.now(),
-          productId: null,
-          productName: `${table.name} - ${durationText}`,
-          price: Number(tableData.currentSession.total),
-          quantity: 1,
-          lineTotal: Number(tableData.currentSession.total),
-        });
+      const s = tableData?.currentSession;
+
+      if (s && s.endTime && s.total != null) {
+        items.push(
+          buildTableFeeItem({
+            tableName: table.name || `Bàn ${table.id}`,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            total: s.total,
+          })
+        );
       }
 
       const initialInvoice = { ...createEmptyInvoice(), items };
       setCustomerName("");
-      recalcInvoice(initialInvoice, { tableId: table.id, customerNameOverride: "" });
+      setInvoice(initialInvoice);
+      recalcInvoice(initialInvoice);
+
+      // optional: xóa query sau khi đã auto load để refresh không bị add lại
+      if (!options.silent && tableIdFromQuery) {
+        // không bắt buộc
+      }
     } catch (err) {
       setError("Lỗi tải session bàn: " + (err.response?.data?.message || err.message));
       const emptyInvoice = createEmptyInvoice();
       setInvoice(emptyInvoice);
-      persistInvoiceState(emptyInvoice, "", table.id);
       setCustomerName("");
     }
   };
@@ -259,22 +300,22 @@ const Cashier = () => {
   const handleAddTable = async () => {
     if (!tableForm.name.trim()) return alert("Vui lòng nhập tên bàn!");
     if (!tableForm.capacity) return alert("Vui lòng nhập sức chứa!");
-    
+
     try {
       setLoading(true);
       const formData = new FormData();
       formData.append("name", tableForm.name);
       formData.append("capacity", tableForm.capacity);
       formData.append("description", tableForm.description || "");
-      
+
       if (tableImageFile) {
         formData.append("image", tableImageFile);
       }
-      
-      const res = await api.post("/tables", formData, {
+
+      await api.post("/tables", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      
+
       alert("✅ Thêm bàn thành công!");
       setAddTableOpen(false);
       setTableForm({ name: "", capacity: "", description: "", imageUrl: "" });
@@ -290,6 +331,7 @@ const Cashier = () => {
   const handleAddToInvoice = () => {
     if (!selectedProduct || productQty <= 0) return;
     const priceNum = Number(selectedProduct.price);
+
     const newItem = {
       id: Date.now(),
       productId: selectedProduct.id,
@@ -298,6 +340,7 @@ const Cashier = () => {
       quantity: productQty,
       lineTotal: priceNum * productQty,
     };
+
     const newItems = [...invoice.items, newItem];
     recalcInvoice({ ...invoice, items: newItems });
     setAddProductOpen(false);
@@ -308,21 +351,23 @@ const Cashier = () => {
     recalcInvoice({ ...invoice, items: newItems });
   };
 
-  const recalcInvoice = (inv, options = {}) => {
-    const { tableId, customerNameOverride } = options;
-    const subtotal = inv.items.reduce((sum, item) => sum + item.lineTotal, 0);
-    const discountAmount = subtotal * (inv.discountPercent / 100);
+  const recalcInvoice = (inv) => {
+    const subtotal = inv.items.reduce((sum, item) => sum + (Number(item.lineTotal) || 0), 0);
+    const discountAmount = subtotal * (Number(inv.discountPercent) / 100);
     const afterDiscount = subtotal - discountAmount;
-    const taxAmount = afterDiscount * (inv.taxPercent / 100);
+    const taxAmount = afterDiscount * (Number(inv.taxPercent) / 100);
     const total = afterDiscount + taxAmount;
     const nextInvoice = { ...inv, subtotal, discountAmount, taxAmount, total };
     setInvoice(nextInvoice);
-    persistInvoiceState(nextInvoice, customerNameOverride, tableId);
+
+    // nếu muốn lưu nháp theo bàn (hiện bạn đang không restore, nhưng có thể lưu)
+    // persistInvoiceState(nextInvoice);
   };
 
   const handleCheckout = async () => {
     if (!selectedTable) return alert("Vui lòng chọn bàn!");
     if (invoice.items.length === 0) return alert("Vui lòng thêm sản phẩm!");
+
     try {
       setLoading(true);
       const payload = {
@@ -337,19 +382,20 @@ const Cashier = () => {
         discountPercent: invoice.discountPercent,
         taxPercent: invoice.taxPercent,
       };
-      console.log("Thanh toán payload:", payload);
+
       const res = await api.post("/invoices", payload);
-      console.log("Thanh toán response:", res.data);
       const invoiceId = res.data?.id ?? "";
       alert("✅ Tạo hoá đơn thành công: " + invoiceId);
+
       if (selectedTable) {
         clearInvoiceForTable(selectedTable.id);
       }
-      // Reset invoice data and store ID for optional PDF export
+
       const resetInvoice = { ...createEmptyInvoice(), id: invoiceId };
       setInvoice(resetInvoice);
       setSelectedTable(null);
       setCustomerName("");
+
       loadTables();
       navigate("/bills", { state: { highlightInvoiceId: invoiceId } });
     } catch (err) {
@@ -367,12 +413,12 @@ const Cashier = () => {
     }
     try {
       const response = await api.get(`/invoices/${invoice.id}/export-pdf`, {
-        responseType: 'blob'
+        responseType: "blob",
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = url;
-      link.setAttribute('download', `HoaDon_${invoice.id}.pdf`);
+      link.setAttribute("download", `HoaDon_${invoice.id}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);
@@ -390,32 +436,64 @@ const Cashier = () => {
 
   return (
     <Box sx={{ p: 3, minHeight: "100vh", bgcolor: "#f5f5f5" }}>
-      <Typography variant="h4" sx={{ mb: 3, fontWeight: "bold" }}>💳 Thu Ngân</Typography>
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      <Typography variant="h4" sx={{ mb: 3, fontWeight: "bold" }}>
+        💳 Thu Ngân
+      </Typography>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
 
       <Grid container spacing={2} sx={{ height: "calc(100vh - 150px)" }}>
         <Grid item xs={12} lg={7}>
           <Paper sx={{ p: 2, height: "100%", overflow: "auto" }}>
             {!selectedTable ? (
               <Box sx={{ textAlign: "center", py: 5 }}>
-                <Button variant="contained" size="large" onClick={() => setTableDialogOpen(true)} sx={{ mb: 2 }}>Chọn Bàn</Button>
+                <Button
+                  variant="contained"
+                  size="large"
+                  onClick={() => setTableDialogOpen(true)}
+                  sx={{ mb: 2 }}
+                >
+                  Chọn Bàn
+                </Button>
                 <Typography color="textSecondary">Vui lòng chọn bàn để bắt đầu</Typography>
               </Box>
             ) : (
               <>
                 <Typography variant="h6" sx={{ mb: 2 }}>
                   📍 Bàn: <strong>{selectedTable.name}</strong>
-                  <Button size="small" onClick={() => setTableDialogOpen(true)} sx={{ ml: 2 }}>Đổi</Button>
+                  <Button size="small" onClick={() => setTableDialogOpen(true)} sx={{ ml: 2 }}>
+                    Đổi
+                  </Button>
                 </Typography>
+
                 {categories.length > 0 && (
-                  <Box sx={{ display: "flex", gap: 1, mb: 3, overflowX: "auto", pb: 1, flexWrap: "wrap" }}>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      gap: 1,
+                      mb: 3,
+                      overflowX: "auto",
+                      pb: 1,
+                      flexWrap: "wrap",
+                    }}
+                  >
                     {categories.map((cat) => (
-                      <Button key={cat} variant={selectedCategory === cat ? "contained" : "outlined"} size="small" onClick={() => setSelectedCategory(cat)} sx={{ textTransform: "none" }}>
+                      <Button
+                        key={cat}
+                        variant={selectedCategory === cat ? "contained" : "outlined"}
+                        size="small"
+                        onClick={() => setSelectedCategory(cat)}
+                        sx={{ textTransform: "none" }}
+                      >
                         {cat === "all" ? "Tất cả" : cat}
                       </Button>
                     ))}
                   </Box>
                 )}
+
                 <Grid container spacing={2}>
                   {paginatedProducts.length === 0 ? (
                     <Grid item xs={12}>
@@ -426,23 +504,48 @@ const Cashier = () => {
                   ) : (
                     paginatedProducts.map((p) => (
                       <Grid item xs={6} sm={4} key={p.id}>
-                        <Card onClick={() => handleAddProductClick(p)} sx={{ cursor: "pointer", transition: "transform 0.2s, boxShadow 0.2s", "&:hover": { transform: "translateY(-5px)", boxShadow: 3 } }}>
-                        <Box sx={{ height: 120, bgcolor: "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-                          {p.imageUrl ? (
-                            <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          ) : (
-                            <ShoppingCartIcon sx={{ fontSize: 60, color: "#999" }} />
-                          )}
-                        </Box>
-                        <CardContent sx={{ p: 1 }}>
-                          <Typography variant="body2" sx={{ fontWeight: "bold", mb: 0.5 }}>{p.name}</Typography>
-                          <Typography variant="body2" sx={{ color: "red", fontWeight: "bold" }}>{formatVND(p.price)}</Typography>
-                        </CardContent>
+                        <Card
+                          onClick={() => handleAddProductClick(p)}
+                          sx={{
+                            cursor: "pointer",
+                            transition: "transform 0.2s, boxShadow 0.2s",
+                            "&:hover": { transform: "translateY(-5px)", boxShadow: 3 },
+                          }}
+                        >
+                          <Box
+                            sx={{
+                              height: 120,
+                              bgcolor: "#f0f0f0",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              overflow: "hidden",
+                            }}
+                          >
+                            {p.imageUrl ? (
+                              <img
+                                src={p.imageUrl}
+                                alt={p.name}
+                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                              />
+                            ) : (
+                              <ShoppingCartIcon sx={{ fontSize: 60, color: "#999" }} />
+                            )}
+                          </Box>
+                          <CardContent sx={{ p: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: "bold", mb: 0.5 }}>
+                              {p.name}
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: "red", fontWeight: "bold" }}>
+                              {formatVND(p.price)}
+                            </Typography>
+                          </CardContent>
                         </Card>
                       </Grid>
                     ))
                   )}
                 </Grid>
+
                 {filteredProducts.length > PRODUCTS_PER_PAGE && (
                   <Box sx={{ display: "flex", justifyContent: "center", mt: 3 }}>
                     <Pagination
@@ -465,31 +568,66 @@ const Cashier = () => {
         <Grid item xs={12} lg={5}>
           <Paper sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column" }}>
             {!selectedTable ? (
-              <Typography color="textSecondary" sx={{ textAlign: "center", py: 5 }}>Chọn bàn để xem hoá đơn</Typography>
+              <Typography color="textSecondary" sx={{ textAlign: "center", py: 5 }}>
+                Chọn bàn để xem hoá đơn
+              </Typography>
             ) : (
               <>
-                <Typography variant="h6" sx={{ mb: 2, fontWeight: "bold" }}>📋 Hoá Đơn</Typography>
-                <TextField label="Tên khách hàng " size="small" fullWidth value={customerName} onChange={(e) => handleCustomerNameChange(e.target.value)} sx={{ mb: 2 }} />
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: "bold" }}>
+                  📋 Hoá Đơn
+                </Typography>
+
+                <TextField
+                  label="Tên khách hàng "
+                  size="small"
+                  fullWidth
+                  value={customerName}
+                  onChange={(e) => handleCustomerNameChange(e.target.value)}
+                  sx={{ mb: 2 }}
+                />
+
                 <TableContainer sx={{ mb: 2, flex: 1, overflow: "auto" }}>
                   <Table size="small" stickyHeader>
                     <TableHead>
                       <TableRow sx={{ bgcolor: "#f0f0f0" }}>
                         <TableCell sx={{ fontWeight: "bold" }}>SP</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: "bold" }}>SL</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: "bold" }}>Giá</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: "bold" }}>Thành tiền</TableCell>
-                        <TableCell align="center" sx={{ fontWeight: "bold" }}>🗑</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: "bold" }}>
+                          SL
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: "bold" }}>
+                          Giá
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: "bold" }}>
+                          Thành tiền
+                        </TableCell>
+                        <TableCell align="center" sx={{ fontWeight: "bold" }}>
+                          🗑
+                        </TableCell>
                       </TableRow>
                     </TableHead>
+
                     <TableBody>
                       {invoice.items.map((item) => (
                         <TableRow key={item.id}>
                           <TableCell sx={{ fontSize: "0.85rem" }}>{item.productName}</TableCell>
-                          <TableCell align="right" sx={{ fontSize: "0.85rem" }}>{item.quantity}</TableCell>
-                          <TableCell align="right" sx={{ fontSize: "0.85rem" }}>{formatVND(item.price)}</TableCell>
-                          <TableCell align="right" sx={{ fontSize: "0.85rem", fontWeight: "bold" }}>{formatVND(item.lineTotal)}</TableCell>
+                          <TableCell align="right" sx={{ fontSize: "0.85rem" }}>
+                            {item.quantity}
+                          </TableCell>
+                          <TableCell align="right" sx={{ fontSize: "0.85rem" }}>
+                            {formatVND(item.price)}
+                          </TableCell>
+                          <TableCell
+                            align="right"
+                            sx={{ fontSize: "0.85rem", fontWeight: "bold" }}
+                          >
+                            {formatVND(item.lineTotal)}
+                          </TableCell>
                           <TableCell align="center">
-                            <IconButton size="small" color="error" onClick={() => handleRemoveItem(item.id)}>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleRemoveItem(item.id)}
+                            >
                               <DeleteIcon fontSize="small" />
                             </IconButton>
                           </TableCell>
@@ -498,29 +636,92 @@ const Cashier = () => {
                     </TableBody>
                   </Table>
                 </TableContainer>
+
                 <Box sx={{ borderTop: "2px solid #ddd", pt: 2 }}>
                   <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1 }}>
                     <Typography>Tạm tính:</Typography>
                     <Typography sx={{ fontWeight: "bold" }}>{formatVND(invoice.subtotal)}</Typography>
                   </Box>
+
                   <Box sx={{ display: "flex", gap: 1, mb: 1, alignItems: "center" }}>
                     <Typography sx={{ flex: 1 }}>Chiết khấu (%):</Typography>
-                    <TextField type="number" size="small" inputProps={{ step: "0.1", min: "0", max: "100" }} sx={{ width: 80 }} value={invoice.discountPercent} onChange={(e) => { const val = parseFloat(e.target.value) || 0; const next = { ...invoice, discountPercent: val }; recalcInvoice(next); }} />
-                    <Typography sx={{ fontWeight: "bold", minWidth: 100, textAlign: "right" }}>-{formatVND(invoice.discountAmount)}</Typography>
+                    <TextField
+                      type="number"
+                      size="small"
+                      inputProps={{ step: "0.1", min: "0", max: "100" }}
+                      sx={{ width: 80 }}
+                      value={invoice.discountPercent}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        const next = { ...invoice, discountPercent: val };
+                        recalcInvoice(next);
+                      }}
+                    />
+                    <Typography sx={{ fontWeight: "bold", minWidth: 100, textAlign: "right" }}>
+                      -{formatVND(invoice.discountAmount)}
+                    </Typography>
                   </Box>
+
                   <Box sx={{ display: "flex", gap: 1, mb: 2, alignItems: "center" }}>
                     <Typography sx={{ flex: 1 }}>Thuế (%):</Typography>
-                    <TextField type="number" size="small" inputProps={{ step: "0.1", min: "0", max: "100" }} sx={{ width: 80 }} value={invoice.taxPercent} onChange={(e) => { const val = parseFloat(e.target.value) || 0; const next = { ...invoice, taxPercent: val }; recalcInvoice(next); }} />
-                    <Typography sx={{ fontWeight: "bold", minWidth: 100, textAlign: "right" }}>+{formatVND(invoice.taxAmount)}</Typography>
+                    <TextField
+                      type="number"
+                      size="small"
+                      inputProps={{ step: "0.1", min: "0", max: "100" }}
+                      sx={{ width: 80 }}
+                      value={invoice.taxPercent}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        const next = { ...invoice, taxPercent: val };
+                        recalcInvoice(next);
+                      }}
+                    />
+                    <Typography sx={{ fontWeight: "bold", minWidth: 100, textAlign: "right" }}>
+                      +{formatVND(invoice.taxAmount)}
+                    </Typography>
                   </Box>
-                  <Box sx={{ display: "flex", justifyContent: "space-between", py: 1.5, px: 1, bgcolor: "#e3f2fd", borderRadius: 1, mb: 2 }}>
-                    <Typography variant="h6" sx={{ fontWeight: "bold" }}>TỔNG:</Typography>
-                    <Typography variant="h6" sx={{ fontWeight: "bold", color: "#d32f2f" }}>{formatVND(invoice.total)}</Typography>
+
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      py: 1.5,
+                      px: 1,
+                      bgcolor: "#e3f2fd",
+                      borderRadius: 1,
+                      mb: 2,
+                    }}
+                  >
+                    <Typography variant="h6" sx={{ fontWeight: "bold" }}>
+                      TỔNG:
+                    </Typography>
+                    <Typography variant="h6" sx={{ fontWeight: "bold", color: "#d32f2f" }}>
+                      {formatVND(invoice.total)}
+                    </Typography>
                   </Box>
+
                   <Box sx={{ display: "flex", gap: 1 }}>
-                    <Button variant="contained" color="success" fullWidth size="large" onClick={handleCheckout} disabled={invoice.items.length === 0 || loading} sx={{ fontWeight: "bold", flex: 1 }}>{loading ? "⏳ Đang xử lý..." : "💰 Thanh Toán"}</Button>
+                    <Button
+                      variant="contained"
+                      color="success"
+                      fullWidth
+                      size="large"
+                      onClick={handleCheckout}
+                      disabled={invoice.items.length === 0 || loading}
+                      sx={{ fontWeight: "bold", flex: 1 }}
+                    >
+                      {loading ? "⏳ Đang xử lý..." : "💰 Thanh Toán"}
+                    </Button>
                     {invoice.id && (
-                      <Button variant="outlined" color="primary" size="large" onClick={handleExportPdf} sx={{ fontWeight: "bold" }}>📄 PDF</Button>
+                      <Button
+                        variant="outlined"
+                        color="primary"
+                        size="large"
+                        onClick={handleExportPdf}
+                        sx={{ fontWeight: "bold" }}
+                      >
+                        📄 PDF
+                      </Button>
                     )}
                   </Box>
                 </Box>
@@ -530,8 +731,17 @@ const Cashier = () => {
         </Grid>
       </Grid>
 
+      {/* Chọn bàn */}
       <Dialog open={tableDialogOpen} onClose={() => setTableDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle sx={{ fontWeight: "bold", fontSize: "1.3rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <DialogTitle
+          sx={{
+            fontWeight: "bold",
+            fontSize: "1.3rem",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
           🎱 Chọn Bàn
         </DialogTitle>
         <DialogContent>
@@ -539,85 +749,83 @@ const Cashier = () => {
             {tables.map((table) => {
               const getStatusColor = (status) => {
                 if (!status) return "#999";
-                const s = status.toLowerCase();
+                const s = String(status).toLowerCase();
                 if (s.includes("available") || s.includes("trống")) return "#4caf50";
                 if (s.includes("occupied") || s.includes("đang dùng")) return "#f44336";
                 return "#ff9800";
               };
               const statusColor = getStatusColor(table.status);
-              
+
               return (
                 <Grid item xs={12} sm={6} md={4} key={table.id}>
-                  <Card 
-                    onClick={() => handleSelectTable(table)} 
-                    sx={{ 
-                      cursor: "pointer", 
+                  <Card
+                    onClick={() => handleSelectTable(table)}
+                    sx={{
+                      cursor: "pointer",
                       transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                       border: "2px solid #e0e0e0",
                       borderRadius: "12px",
                       overflow: "hidden",
-                      "&:hover": { 
+                      "&:hover": {
                         transform: "translateY(-8px)",
                         boxShadow: "0 12px 24px rgba(0,0,0,0.15)",
-                        borderColor: "#0b64b3"
-                      }
+                        borderColor: "#0b64b3",
+                      },
                     }}
                   >
-                    <Box sx={{ 
-                      height: 180, 
-                      bgcolor: "#f0f0f0", 
-                      display: "flex", 
-                      alignItems: "center", 
-                      justifyContent: "center",
-                      overflow: "hidden",
-                      position: "relative"
-                    }}>
+                    <Box
+                      sx={{
+                        height: 180,
+                        bgcolor: "#f0f0f0",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        overflow: "hidden",
+                        position: "relative",
+                      }}
+                    >
                       {table.imageUrl ? (
-                        <img src={table.imageUrl} alt={table.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <img
+                          src={table.imageUrl}
+                          alt={table.name}
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
                       ) : (
                         <Box sx={{ textAlign: "center" }}>
                           <Typography sx={{ fontSize: "4rem", mb: 1 }}>🎱</Typography>
-                          <Typography sx={{ color: "#999", fontWeight: "500" }}></Typography>
                         </Box>
                       )}
                     </Box>
-                    
+
                     <CardContent sx={{ p: 2 }}>
-                      <Typography 
-                        sx={{ 
-                          fontWeight: "bold", 
-                          fontSize: "1.2rem",
-                          mb: 1,
-                          color: "#333"
-                        }}
-                      >
+                      <Typography sx={{ fontWeight: "bold", fontSize: "1.2rem", mb: 1, color: "#333" }}>
                         {table.name}
                       </Typography>
-                      
+
                       <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}>
-                        <Box 
-                          sx={{ 
-                            width: 10, 
-                            height: 10, 
-                            borderRadius: "50%", 
+                        <Box
+                          sx={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: "50%",
                             bgcolor: statusColor,
-                            boxShadow: `0 0 6px ${statusColor}`
-                          }} 
+                            boxShadow: `0 0 6px ${statusColor}`,
+                          }}
                         />
                         <Typography variant="body2" sx={{ fontWeight: "600", color: statusColor }}>
                           {table.status || "Không xác định"}
                         </Typography>
                       </Box>
-                      
+
                       {table.capacity && (
                         <Typography variant="caption" sx={{ color: "#666", display: "block", mb: 0.5 }}>
                           👥 Sức chứa: <strong>{table.capacity} chỗ</strong>
                         </Typography>
                       )}
-                      
-                      <Button 
-                        variant="contained" 
-                        fullWidth 
+
+                      <Button
+                        variant="contained"
+                        fullWidth
                         onClick={() => handleSelectTable(table)}
                         sx={{ mt: 1.5, fontWeight: "bold", textTransform: "none", fontSize: "1rem" }}
                       >
@@ -632,18 +840,29 @@ const Cashier = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Thêm sản phẩm */}
       <Dialog open={addProductOpen} onClose={() => setAddProductOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Thêm Sản Phẩm</DialogTitle>
         <DialogContent>
           {selectedProduct && (
             <Box sx={{ mt: 2 }}>
               <Typography sx={{ mb: 2 }}>
-                <strong>{selectedProduct.name}</strong> - Giá: <span style={{ color: "red", fontWeight: "bold" }}>{formatVND(selectedProduct.price)}</span>
+                <strong>{selectedProduct.name}</strong> - Giá:{" "}
+                <span style={{ color: "red", fontWeight: "bold" }}>{formatVND(selectedProduct.price)}</span>
               </Typography>
-              <TextField label="Số lượng" type="number" fullWidth inputProps={{ min: "1", step: "1" }} value={productQty} onChange={(e) => setProductQty(parseInt(e.target.value) || 1)} />
+              <TextField
+                label="Số lượng"
+                type="number"
+                fullWidth
+                inputProps={{ min: "1", step: "1" }}
+                value={productQty}
+                onChange={(e) => setProductQty(parseInt(e.target.value) || 1)}
+              />
               <Box sx={{ mt: 2, display: "flex", gap: 1 }}>
                 <Button onClick={() => setAddProductOpen(false)}>Hủy</Button>
-                <Button variant="contained" onClick={handleAddToInvoice}>Thêm</Button>
+                <Button variant="contained" onClick={handleAddToInvoice}>
+                  Thêm
+                </Button>
               </Box>
             </Box>
           )}

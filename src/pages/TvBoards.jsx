@@ -50,7 +50,11 @@ function getHourlyRate(table) {
 
 /**
  * ✅ Parse LocalDateTime từ Spring (YYYY-MM-DDTHH:mm:ss)
+
  * Không dùng Date.parse(string) vì mỗi browser parse khác nhau.
+
+ * Ổn định trên mọi browser.
+
  */
 function parseLocalDateTime(s) {
   if (!s) return null;
@@ -87,13 +91,12 @@ function formatDateVN(d) {
 
 export default function TvBoards() {
   const [tables, setTables] = useState([]);
-  const [sessionsByTableId, setSessionsByTableId] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
 
   const [now, setNow] = useState(Date.now());
-  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [filter, setFilter] = useState("all"); // all | playing | empty
   const [sort, setSort] = useState("playing_first"); // playing_first | longest | id
@@ -111,10 +114,15 @@ export default function TvBoards() {
   // fullscreen change
   useEffect(() => {
     const onFs = () => setIsFullscreen(!!document.fullscreenElement);
+    onFs();
     document.addEventListener("fullscreenchange", onFs);
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
 
+  /**
+   * ✅ CHỈ gọi /tables (DTO đã có currentSession)
+   * Không gọi /invoices/sessions/{id} nữa để tránh lỗi non-unique result.
+   */
   const fetchData = useCallback(async () => {
     try {
       setError("");
@@ -123,6 +131,7 @@ export default function TvBoards() {
       const tablesRes = await api.get("/tables");
       const tableList = Array.isArray(tablesRes.data) ? tablesRes.data : [];
       setTables(tableList);
+
 
       const pairs = await Promise.all(
         tableList.map(async (t) => {
@@ -144,6 +153,8 @@ export default function TvBoards() {
         if (id != null) map[id] = sess;
       }
       setSessionsByTableId(map);
+
+
       setLastUpdated(new Date());
     } catch (e) {
       console.error(e);
@@ -151,7 +162,7 @@ export default function TvBoards() {
         e?.response?.data?.message ||
           e?.response?.data?.error ||
           e?.message ||
-          "Không tải được dữ liệu bàn/session"
+          "Không tải được dữ liệu bàn"
       );
     } finally {
       setLoading(false);
@@ -179,11 +190,12 @@ export default function TvBoards() {
 
   const derived = useMemo(() => {
     const arr = tables.map((t) => {
-      const id = t?.id;
-      const session = id != null ? sessionsByTableId[id] : null;
+      const session = t?.currentSession || null;
 
       const start = getSessionStart(session);
-      const playing = !!session && !!start && !session?.endTime;
+      // ✅ playing nếu status OCCUPIED + có startTime + endTime null
+      const playing =
+        t?.status === "OCCUPIED" && !!start && (session?.endTime == null);
 
       const hourly = getHourlyRate(t);
 
@@ -191,7 +203,10 @@ export default function TvBoards() {
       const elapsedMsRaw = playing ? now - start.getTime() : 0;
       const elapsedMs = Math.max(0, elapsedMsRaw);
 
+
       // ✅ tính theo phút (không nhảy lẻ)
+
+      // ✅ tính theo phút
       const elapsedMinutes = playing ? Math.floor(elapsedMs / 60000) : 0;
 
       // ✅ tiền theo phút + làm tròn
@@ -200,7 +215,21 @@ export default function TvBoards() {
       const hours = playing ? elapsedMs / 3600000 : 0;
       const warnLevel = hours >= 3 ? "danger" : hours >= 2 ? "warn" : "none";
 
+
       return { table: t, session, start, playing, elapsedMs, hourly, money, warnLevel };
+
+      return {
+        table: t,
+        session,
+        start,
+        playing,
+        elapsedMs,
+        elapsedMinutes,
+        hourly,
+        money,
+        warnLevel,
+      };
+
     });
 
     let filtered = arr;
@@ -224,7 +253,7 @@ export default function TvBoards() {
     }
 
     return filtered;
-  }, [tables, sessionsByTableId, now, filter, sort]);
+  }, [tables, now, filter, sort]);
 
   const countPlaying = derived.filter((x) => x.playing).length;
   const countEmpty = derived.length - countPlaying;

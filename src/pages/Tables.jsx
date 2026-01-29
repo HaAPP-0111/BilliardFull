@@ -31,32 +31,15 @@ export default function Tables() {
   const [loading, setLoading] = useState(true);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState(false); // false = create, true = edit
+  const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(EMPTY_TABLE);
   const [error, setError] = useState("");
 
   const load = async () => {
     try {
       setLoading(true);
-      const res = await api.get("/tables"); // -> /api/tables
-      const tablesData = res.data || [];
-
-      // For occupied tables, fetch active session to show start time / total
-      const withSessions = await Promise.all(
-        tablesData.map(async (t) => {
-          if (t.status === "OCCUPIED") {
-            try {
-              const s = await api.get(`/invoices/sessions/${t.id}`);
-              return { ...t, currentSession: s.data };
-            } catch (err) {
-              return { ...t, currentSession: null };
-            }
-          }
-          return { ...t, currentSession: null };
-        })
-      );
-
-      setTables(withSessions);
+      const res = await api.get("/tables");
+      setTables(res.data || []);
     } catch (err) {
       console.error("Failed to load tables:", err);
     } finally {
@@ -68,49 +51,49 @@ export default function Tables() {
     load();
   }, []);
 
-  // Bắt đầu tính giờ (tạo TableSession + đổi status sang OCCUPIED)
   const handleStart = async (id) => {
     try {
-      await api.post(`/invoices/sessions/${id}/start`); // -> /api/invoices/sessions/{tableId}/start
+      await api.post(`/tables/${id}/start-session`);
       await load();
     } catch (err) {
       console.error("Failed to start session:", err);
+      alert(
+        "Không thể bắt đầu session cho bàn này!\n" +
+          (err?.response?.data?.message || err?.response?.data || err.message)
+      );
     }
   };
 
-  // Kết thúc tính giờ (đóng session + đổi status sang AVAILABLE)
   const handleStop = async (id) => {
     try {
-      const table = tables.find(t => t.id === id);
-      if (!table || !table.currentSession) {
-        console.error("Session not found");
-        return;
-      }
-
-      const response = await api.post(`/invoices/sessions/${id}/end`); // -> /api/invoices/sessions/{tableId}/end
+      const response = await api.post(`/tables/${id}/end-session`);
       const session = response.data;
 
-      if (session && session.startTime && session.endTime) {
+      if (session?.startTime && session?.endTime) {
         const startTime = new Date(session.startTime);
         const endTime = new Date(session.endTime);
         const durationMs = endTime - startTime;
-        const durationMinutes = Math.floor(durationMs / 60000);
+
+        const durationMinutes = Math.max(1, Math.floor(durationMs / 60000));
         const durationHours = Math.floor(durationMinutes / 60);
         const remainingMinutes = durationMinutes % 60;
-        
+
         const totalCost = formatVND(session.total ?? 0);
-        const timeStr = durationHours > 0 
-          ? `${durationHours}h ${remainingMinutes}m` 
-          : `${durationMinutes}m`;
-        
+        const timeStr =
+          durationHours > 0
+            ? `${durationHours}h ${remainingMinutes}m`
+            : `${durationMinutes}m`;
+
         alert(`Thời gian chơi: ${timeStr}\nTổng tiền: ${totalCost}`);
       }
 
-      // Reload data after ending session
-      setTimeout(() => load(), 500);
+      await load();
     } catch (err) {
       console.error("Failed to end session:", err);
-      alert("Kết thúc ca không thành công");
+      alert(
+        "Kết thúc ca không thành công\n" +
+          (err?.response?.data?.message || err?.response?.data || err.message)
+      );
     }
   };
 
@@ -135,9 +118,7 @@ export default function Tables() {
     setDialogOpen(true);
   };
 
-  const closeDialog = () => {
-    setDialogOpen(false);
-  };
+  const closeDialog = () => setDialogOpen(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -157,22 +138,16 @@ export default function Tables() {
     }
 
     try {
-      const imageUrl = form.imageUrl?.trim() || "";
-
-      // Gửi table lên backend
       const payload = {
         name: form.name.trim(),
         pricePerHour: priceNumber,
         description: form.description.trim(),
-        imageUrl: imageUrl,
+        imageUrl: form.imageUrl?.trim() || "",
         status: editing ? form.status : "AVAILABLE",
       };
 
-      if (editing) {
-        await api.put(`/tables/${form.id}`, payload);
-      } else {
-        await api.post("/tables", payload);
-      }
+      if (editing) await api.put(`/tables/${form.id}`, payload);
+      else await api.post("/tables", payload);
 
       setDialogOpen(false);
       await load();
@@ -184,12 +159,7 @@ export default function Tables() {
 
   return (
     <Paper sx={{ p: 2 }}>
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        mb={2}
-      >
+      <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
         <div>
           <Typography variant="h6">Quản Lý Bàn Bi-a</Typography>
           <Typography variant="body2" color="text.secondary">
@@ -224,28 +194,30 @@ export default function Tables() {
             {tables.map((t) => (
               <TableRow key={t.id}>
                 <TableCell>{t.id}</TableCell>
-                <TableCell>{t.description || '-'}</TableCell>
+                <TableCell>{t.description || "-"}</TableCell>
                 <TableCell>{t.name}</TableCell>
                 <TableCell>{t.status}</TableCell>
                 <TableCell>{formatVND(t.pricePerHour)}</TableCell>
+
                 <TableCell>
-                  {t.currentSession && t.currentSession.startTime
-                    ? new Date(t.currentSession.startTime).toLocaleString()
+                  {t.currentSession?.startTime
+                    ? new Date(t.currentSession.startTime).toLocaleString("vi-VN")
                     : "-"}
                 </TableCell>
+
                 <TableCell>
-                  {t.currentSession && t.currentSession.endTime
-                    ? new Date(t.currentSession.endTime).toLocaleString()
+                  {t.currentSession?.endTime
+                    ? new Date(t.currentSession.endTime).toLocaleString("vi-VN")
                     : "-"}
                 </TableCell>
+
                 <TableCell>
-                  {t.currentSession && t.currentSession.total != null
-                    ? formatVND(t.currentSession.total)
-                    : "-"}
+                  {t.currentSession?.total != null ? formatVND(t.currentSession.total) : "-"}
                 </TableCell>
+
                 <TableCell>
                   <Stack direction="row" spacing={1}>
-                    {(t.status === "AVAILABLE" || t.status === "RESERVED") ? (
+                    {t.status === "AVAILABLE" || t.status === "RESERVED" ? (
                       <Button
                         size="small"
                         variant="contained"
@@ -264,24 +236,8 @@ export default function Tables() {
                         Kết thúc
                       </Button>
                     )}
-                    {t.currentSession && t.currentSession.endTime && (
-                      <Button size="small" variant="outlined" onClick={async ()=>{
-                        // create invoice from session
-                        try{
-                          await api.post(`/invoices/sessions/${t.currentSession.id}/create-invoice`)
-                          alert('Hoá đơn đã được tạo')
-                          await load()
-                        }catch(e){
-                          console.error(e)
-                          alert('Tạo hoá đơn thất bại')
-                        }
-                      }}>Tạo hoá đơn</Button>
-                    )}
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() => openEditDialog(t)}
-                    >
+
+                    <Button size="small" variant="outlined" onClick={() => openEditDialog(t)}>
                       Sửa
                     </Button>
                   </Stack>
@@ -292,11 +248,8 @@ export default function Tables() {
         </Table>
       )}
 
-      {/* Dialog thêm / sửa bàn */}
       <Dialog open={dialogOpen} onClose={closeDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {editing ? "Cập nhật bàn" : "Thêm bàn mới"}
-        </DialogTitle>
+        <DialogTitle>{editing ? "Cập nhật bàn" : "Thêm bàn mới"}</DialogTitle>
         <DialogContent dividers>
           {error && (
             <Typography color="error" variant="body2" sx={{ mb: 1 }}>
@@ -304,14 +257,7 @@ export default function Tables() {
             </Typography>
           )}
           <Stack spacing={2} mt={1}>
-            <TextField
-              label="Tên bàn"
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              fullWidth
-              required
-            />
+            <TextField label="Tên bàn" name="name" value={form.name} onChange={handleChange} fullWidth required />
             <TextField
               label="Giá / giờ"
               name="pricePerHour"
@@ -330,7 +276,6 @@ export default function Tables() {
               multiline
               minRows={2}
             />
-
           </Stack>
         </DialogContent>
         <DialogActions>
