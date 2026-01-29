@@ -86,6 +86,13 @@
       <scope>runtime</scope>
     </dependency>
 
+    <!-- ✅ Google GenAI SDK (Gemini) -->
+    <dependency>
+      <groupId>com.google.genai</groupId>
+      <artifactId>google-genai</artifactId>
+      <version>1.36.0</version>
+    </dependency>
+
     <!-- Lombok -->
     <dependency>
       <groupId>org.projectlombok</groupId>

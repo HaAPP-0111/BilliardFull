@@ -1,17 +1,8 @@
 package com.dinhquangha.backend.controller;
 
 import com.dinhquangha.backend.dto.DashboardStats;
-import com.dinhquangha.backend.repository.BilliardTableRepository;
-import com.dinhquangha.backend.repository.EmployeeRepository;
-import com.dinhquangha.backend.repository.InvoiceRepository;
-import com.dinhquangha.backend.repository.ProductRepository;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
-import java.time.LocalDate;
-import java.time.LocalDateTime;
+import com.dinhquangha.backend.service.DashboardStatsService;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/admin/dashboard")
@@ -24,41 +15,14 @@ import java.time.LocalDateTime;
 )
 public class DashboardController {
 
-    private final BilliardTableRepository tableRepository;
-    private final ProductRepository productRepository;
-    private final EmployeeRepository employeeRepository;
-    private final InvoiceRepository invoiceRepository;
+    private final DashboardStatsService dashboardStatsService;
 
-    public DashboardController(
-            BilliardTableRepository tableRepository,
-            ProductRepository productRepository,
-            EmployeeRepository employeeRepository,
-            InvoiceRepository invoiceRepository
-    ) {
-        this.tableRepository = tableRepository;
-        this.productRepository = productRepository;
-        this.employeeRepository = employeeRepository;
-        this.invoiceRepository = invoiceRepository;
+    public DashboardController(DashboardStatsService dashboardStatsService) {
+        this.dashboardStatsService = dashboardStatsService;
     }
 
     @GetMapping
     public DashboardStats getStats() {
-
-        long tableCount = tableRepository.count();
-        long productCount = productRepository.count();
-        long employeeCount = employeeRepository.count();
-
-        LocalDate today = LocalDate.now();
-        LocalDateTime start = today.atStartOfDay();
-        LocalDateTime end = today.plusDays(1).atStartOfDay();
-
-        long todayInvoiceCount = invoiceRepository.countByCreatedAtBetween(start, end);
-
-        return new DashboardStats(
-                tableCount,
-                productCount,
-                employeeCount,
-                todayInvoiceCount
-        );
+        return dashboardStatsService.getTodayStats();
     }
 }

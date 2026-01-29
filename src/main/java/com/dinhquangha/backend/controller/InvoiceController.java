@@ -3,6 +3,7 @@ package com.dinhquangha.backend.controller;
 import com.dinhquangha.backend.model.Invoice;
 import com.dinhquangha.backend.repository.InvoiceRepository;
 import com.dinhquangha.backend.service.InvoicePdfService;
+import com.dinhquangha.backend.repository.TableSessionRepository;
 import com.dinhquangha.backend.service.InvoiceService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -25,11 +26,13 @@ public class InvoiceController {
     private final InvoiceRepository invoiceRepository;
     private final InvoicePdfService invoicePdfService;
     private final InvoiceService invoiceService;
+    private final TableSessionRepository sessionRepository;
 
-    public InvoiceController(InvoiceRepository invoiceRepository, InvoicePdfService invoicePdfService, InvoiceService invoiceService) {
+    public InvoiceController(InvoiceRepository invoiceRepository, InvoicePdfService invoicePdfService, InvoiceService invoiceService, TableSessionRepository sessionRepository) {
         this.invoiceRepository = invoiceRepository;
         this.invoicePdfService = invoicePdfService;
         this.invoiceService = invoiceService;
+        this.sessionRepository = sessionRepository;
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -102,9 +105,18 @@ public class InvoiceController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteInvoice(@PathVariable Long id) {
-        if (!invoiceRepository.existsById(id)) {
-            return ResponseEntity.notFound().build();
+        Invoice invoice = invoiceRepository.findByIdWithItems(id).orElse(null);
+        if (invoice == null) return ResponseEntity.notFound().build();
+
+        // Nếu hoá đơn liên kết tới session bàn, xoá luôn session đó để không hiện lại sau F5
+        if (invoice.getSession() != null && invoice.getSession().getId() != null) {
+            try {
+                sessionRepository.deleteById(invoice.getSession().getId());
+            } catch (Exception ex) {
+                // ignore deletion errors, proceed to delete invoice
+            }
         }
+
         invoiceRepository.deleteById(id);
         return ResponseEntity.noContent().build();
     }

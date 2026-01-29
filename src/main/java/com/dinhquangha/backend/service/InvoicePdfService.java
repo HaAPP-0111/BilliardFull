@@ -22,6 +22,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.format.DateTimeFormatter;
+import java.text.NumberFormat;
+import java.util.Locale;
 
 @Service
 public class InvoicePdfService {
@@ -160,7 +162,9 @@ public class InvoicePdfService {
     }
     
     private String formatPrice(Number price) {
-        if (price == null) return "0đ";
-        return String.format("%.0fđ", price.doubleValue());
+        if (price == null) return NumberFormat.getCurrencyInstance(new Locale("vi", "VN")).format(0);
+        NumberFormat nf = NumberFormat.getCurrencyInstance(new Locale("vi", "VN"));
+        nf.setMaximumFractionDigits(0);
+        return nf.format(price);
     }
 }
