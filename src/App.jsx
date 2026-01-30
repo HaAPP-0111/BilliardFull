@@ -1,4 +1,3 @@
-
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
@@ -10,35 +9,20 @@ import Bills from "./pages/Bills";
 import Employees from "./pages/Employees";
 import Dashboard from "./pages/Dashboard";
 import Cashier from "./pages/Cashier";
-import TvBoards from "./pages/TvBoards";
+import TvBoardsPage from "./pages/TvBoards"; // ✅ alias để tránh trùng tên
 
 // Layout & Route
 import ProtectedRoute from "./routes/ProtectedRoute";
 import Layout from "./components/Layout";
-
-import TvBoards from "./pages/TvBoards";
-import Landing from "./pages/Landing";
-
-
-
-
 
 export default function App() {
   return (
     <Routes>
       {/* Public routes */}
       <Route path="/login" element={<Login />} />
-      <Route path="/tv" element={<TvBoards />} />
-
-
-      <Route path="/welcome" element={<Landing />} />
-
-
-
-      {/* Khu vực admin */}
+      <Route path="/tv" element={<TvBoardsPage />} />
 
       {/* Protected admin area */}
-
       <Route
         path="/"
         element={
@@ -60,7 +44,14 @@ export default function App() {
       </Route>
 
       {/* Fallback route for 404 */}
-      <Route path="*" element={<div style={{padding: 32, textAlign: 'center'}}><h2>404 - Không tìm thấy trang</h2></div>} />
+      <Route
+        path="*"
+        element={
+          <div style={{ padding: 32, textAlign: "center" }}>
+            <h2>404 - Không tìm thấy trang</h2>
+          </div>
+        }
+      />
     </Routes>
   );
 }
